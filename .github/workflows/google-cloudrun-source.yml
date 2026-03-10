@@ -35,7 +35,7 @@ on:
       - main
 
 env:
-  PROJECT_ID: 'FundLok' # TODO: update to your Google Cloud project ID
+  PROJECT_ID: 'fundlok' # TODO: update to your Google Cloud project ID
   REGION: 'asia-southeast1' # TODO: update to your region
   SERVICE: 'etl_api' # TODO: update to your service name
 
