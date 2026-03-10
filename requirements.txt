@@ -1,0 +1,23 @@
+# Core FastAPI + server
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Database (SQLAlchemy 2.x sync)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+
+# Environment & config
+python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
+
+# Security (password hashing + JWT)
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+
+# Optional but very useful for dev
+alembic>=1.13.0          # migrations (we'll set up soon)
+httpx>=0.27.0            # for testing API calls
+pytest>=8.0.0            # for tests (add later)
+
+email-validator>=2.0.0.post1   # for email validation in Pydantic
+argon2-cffi   #I added this due to the 72 bcrypt error
