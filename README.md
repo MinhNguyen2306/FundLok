@@ -1,58 +1,46 @@
-FundLok MVP 🚀
-CTO Note: This is the core FastAPI backend for FundLok. This repository contains the source code, dependency requirements, and configuration templates needed to run the MVP locally or in a containerized environment.
+# FundLok MVP Backend
 
-🛠 Tech Stack
-Framework: FastAPI (Python 3.11+)
+API backend for the FundLok fintech platform — enabling SMEs to raise capital through revenue-share investments from accredited investors.
 
-Database: PostgreSQL
+**Current status (March 2026)**  
+Local development server running stably with basic user authentication and health endpoints.
 
-Data Validation: Pydantic Settings
+## Features Implemented
 
-Server: Uvicorn
+- User registration (`POST /auth/register`)
+- Simple email + password login (`POST /auth/login`) — returns JWT access token
+- Protected user profile endpoint (`GET /users/me`)
+- Health check (`GET /health`) and DB connectivity test (`GET /test-db`)
+- Argon2 password hashing (secure, no length limit issues)
+- Dependency injection for database sessions (SQLAlchemy + PostgreSQL)
+- Swagger UI auto-generated at `/docs`
 
-🚀 Local Setup Guide
-Follow these steps to get your local development environment running.
+## Tech Stack
 
-1. Clone the Repository
-Bash
-git clone https://github.com/MinhNguyen2306/FundLok.git
-cd FundLok
-2. Configure Virtual Environment
-Bash
-# Create the environment
-python3 -m venv venv
+- Python 3.11
+- FastAPI (API framework)
+- SQLAlchemy 2.x (ORM)
+- PostgreSQL (database)
+- Argon2 (password hashing)
+- JWT (authentication)
+- Uvicorn (ASGI server)
+- Pydantic v2 (data validation & settings)
 
-# Activate the environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-# .\venv\Scripts\activate
+## Local Setup
 
-# Install dependencies
-pip install -r requirements.txt
-3. Environment Variables
-The application requires a .env file in the root directory to handle secrets and database connections.
+### Prerequisites
 
-Create a .env file: touch .env
+- Python 3.11+
+- PostgreSQL 15+ (local or Docker)
+- Git
 
-Add the following required fields:
+### Steps
 
-Plaintext
-DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<db_name>
-SECRET_KEY=your_secure_random_secret_key
-(Refer to .env.example for the full list of required configuration keys).
+1. **Clone the repository**
 
-🏃 Running the Application
-Launch the development server using Uvicorn. Note that the entry point is located within the app subdirectory.
-
-Bash
-uvicorn app.main:app --reload
-📍 API Endpoints & Documentation
-Once the server is running, you can access the interactive documentation at:
-
-Swagger UI (Interactive): http://127.0.0.1:8000/docs
-
-ReDoc: http://127.0.0.1:8000/redoc
+   ```bash
+   git clone https://github.com/your-org/fundlok-backend.git
+   cd fundlok-backend
 
 📂 Project Structure
 Plaintext
