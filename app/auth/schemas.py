@@ -2,6 +2,9 @@ from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
 
 
+ALLOWED_ROLES = frozenset({"SME", "INVESTOR", "ADMIN"})
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     phone: str | None = None
@@ -15,21 +18,22 @@ class UserCreate(BaseModel):
             raise ValueError("Password too long for bcrypt")
         return v
 
+    @field_validator("role")
+    @classmethod
+    def normalize_role(cls, v: str) -> str:
+        u = v.strip().upper()
+        if u not in ALLOWED_ROLES:
+            raise ValueError("role must be SME, INVESTOR, or ADMIN")
+        return u
+
 
 class UserOut(BaseModel):
-    id: UUID  # ← change to UUID type
+    id: UUID
     email: EmailStr
     role: str
     status: str
 
-    class Config:
-        from_attributes = True  # ← enables ORM mode (auto converts SQLAlchemy objects)
-
-    # Optional: auto-convert UUID to str in response
-    @field_validator("id", mode="before")
-    @classmethod
-    def uuid_to_str(cls, v):
-        return str(v)
+    model_config = {"from_attributes": True}
 
 
 class LoginRequest(BaseModel):
@@ -37,16 +41,15 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class Token(BaseModel):  # ← this class was missing or not imported
+class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TokenData(BaseModel):
     user_id: str | None = None
-
-
-
-
-
-
