@@ -36,37 +36,43 @@ Local development server running stably with basic user authentication and healt
 
 ### Steps
 
-1. **Clone the repository**
+
+1. **Install the DB**
+   ```bash
+   Create DB  docker exec -i postgres-dev psql -U postgres < CreateDB_DDL.sql
+   Create Tables docker exec -i postgres-dev psql -U edwardw -d fundlok_dev < DDL.sql
+   Insert test data docker exec -i postgres-dev psql -U edwardw -d fundlok_dev < Setup_Table_Inserts.sql
+2. **Clone the repository**
 
    ```bash
    git clone https://github.com/your-org/fundlok-backend.git
    cd fundlok-backend
 
-2. **Create & activate virtual environment**
+3. **Create & activate virtual environment**
 
    ```bash
    python -m venv venv
    source venv/bin/activate    # Mac/Linux
    
-3. **Install dependencies**
+4. **Install dependencies**
 
    ```bash
    pip install -r requirements.txt
    
-4. **Set up environment variables**
+5. **Set up environment variables**
 Contact Admin for details, to be copied into .env in project root directory. 
    ```bash
    DATABASE_URL=postgresql+psycopg2://api_user:your_password@localhost:5432/fundlok_dev
    SECRET_KEY=super_secret_change_me_32_chars_or_more
    ACCESS_TOKEN_EXPIRE_MINUTES=30
    
-5. **Start the server**
+6. **Start the server**
 
    ```bash
    python -m venv venv
    source venv/bin/activate    # Mac/Linux
    
-6. **Open Swagger UI**
+7. **Open Swagger UI**
 
    ```bash
    http://127.0.0.1:8000/docs
@@ -91,6 +97,7 @@ Optional environment variables:
 
 - `FUNDL_API_BASE_URL` — default `http://127.0.0.1:8000`
 - `FUNDL_API_PASSWORD` — default `TestPassw0rd!` (test users get unique emails per run)
+  
 
 ## Database: idempotency columns & migrations
 
