@@ -29,11 +29,8 @@ def health_check():
 
 @app.get("/test-db")
 def test_db(db: Session = Depends(get_db)):
-    try:
-        result = db.execute(text("SELECT 1")).scalar()
-        return {"db_connected": result == 1}
-    except Exception as e:
-        return {"error": str(e)}
+    result = db.execute(text("SELECT 1")).scalar()
+    return {"db_connected": result == 1}
 
 
 # Include routers **after** app is defined
