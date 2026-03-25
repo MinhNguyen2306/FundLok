@@ -9,13 +9,25 @@ from app.lending.kyc import project_has_verified_kyc
 from app.lending.models import Contract, Holding, Listing, LoanApplication, Order
 
 
+def _dec(value: object) -> Decimal:
+    """Coerce ORM / JSON numerics to Decimal (avoids Decimal ± float TypeError)."""
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, int) and not isinstance(value, bool):
+        return Decimal(value)
+    return Decimal(str(value))
+
+
 def _recompute_holding_shares(db: Session, contract_id: UUID) -> None:
     hs = db.query(Holding).filter(Holding.contract_id == contract_id).all()
-    total = sum((h.principal for h in hs), Decimal("0"))
+    total = sum((_dec(h.principal) for h in hs), Decimal("0"))
     if total <= 0:
         return
     for h in hs:
-        h.share_ratio = (h.principal / total).quantize(Decimal("0.00000001"))
+        p = _dec(h.principal)
+        h.share_ratio = (p / total).quantize(Decimal("0.00000001"))
         db.add(h)
 
 
@@ -81,9 +93,15 @@ def place_order(
         raise HTTPException(status_code=404, detail="Listing not found")
     if lst.status != "OPEN":
         raise HTTPException(status_code=400, detail="Listing is not open for funding")
-    if lst.min_ticket is not None and amount < lst.min_ticket:
+
+    amount = _dec(amount)
+    target_amt = _dec(lst.target_amount)
+    funded_amt = _dec(lst.funded_amount)
+    min_ticket = _dec(lst.min_ticket) if lst.min_ticket is not None else None
+
+    if min_ticket is not None and amount < min_ticket:
         raise HTTPException(status_code=400, detail="Amount below min_ticket")
-    remaining = lst.target_amount - lst.funded_amount
+    remaining = target_amt - funded_amt
     if amount > remaining:
         raise HTTPException(status_code=400, detail="Amount exceeds remaining capacity")
 
@@ -99,10 +117,11 @@ def place_order(
     db.add(order)
     db.flush()
 
-    lst.funded_amount = lst.funded_amount + amount
+    new_listing_funded = funded_amt + amount
+    lst.funded_amount = new_listing_funded
     c = db.query(Contract).filter(Contract.id == lst.contract_id).first()
     if c:
-        c.funded_amount = c.funded_amount + amount
+        c.funded_amount = _dec(c.funded_amount) + amount
 
     holding = (
         db.query(Holding)
@@ -110,7 +129,7 @@ def place_order(
         .first()
     )
     if holding:
-        holding.principal = holding.principal + amount
+        holding.principal = _dec(holding.principal) + amount
         holding.order_id = order.id
     else:
         holding = Holding(
@@ -121,7 +140,7 @@ def place_order(
         )
         db.add(holding)
 
-    if lst.funded_amount >= lst.target_amount:
+    if new_listing_funded >= target_amt:
         lst.status = "FUNDED"
         lst.close_at = now
         if c:
