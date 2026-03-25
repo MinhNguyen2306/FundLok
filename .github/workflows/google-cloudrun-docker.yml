@@ -70,6 +70,10 @@ jobs:
           project_id: '${{ env.PROJECT_ID }}'
           # NOTE: If using a different source folder, update the image name below:
           source: './'
+          cloudsql_instances: 'fundlok:asia-southeast1:fundlok'
+          env_vars: |
+            DATABASE_URL=${{ secrets.FUNLOK }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
 
       # If required, use the Cloud Run URL output in later steps
       - name: 'Show output'
