@@ -1,4 +1,4 @@
-import app.models  # noqa: F401 — register ORM mappers before routes
+#import app.models  # noqa: F401 — register ORM mappers before routes
 
 from fastapi import FastAPI, Depends
 from sqlalchemy import text
