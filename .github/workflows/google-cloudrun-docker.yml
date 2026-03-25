@@ -70,7 +70,7 @@ jobs:
           project_id: '${{ env.PROJECT_ID }}'
           # NOTE: If using a different source folder, update the image name below:
           source: './'
-          env_vars: |
+          build_env_vars: |
             GOOGLE_ENTRYPOINT=uvicorn app.main:app --host 0.0.0.0 --port 8080
 
       # If required, use the Cloud Run URL output in later steps
