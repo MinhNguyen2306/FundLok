@@ -1,1 +1,1 @@
-web: python app/main.py
+web: uvicorn app.main:app --host 0.0.0.0 --port 8080
