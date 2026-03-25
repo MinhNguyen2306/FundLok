@@ -27,11 +27,13 @@ app = FastAPI(
 def health_check():
     return {"status": "healthy"}
 
-
 @app.get("/test-db")
 def test_db(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT 1")).scalar()
-    return {"db_connected": result == 1}
+    try:
+        result = db.execute(text("SELECT 1")).scalar()
+        return {"db_connected": result == 1}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # Include routers **after** app is defined
