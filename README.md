@@ -72,10 +72,50 @@ Contact Admin for details, to be copied into .env in project root directory.
    http://127.0.0.1:8000/docs
    Register a user → login → copy token → click Authorize → paste Bearer [token] → test protected endpoints
 
+## API smoke test script
+
+End-to-end HTTP checks for all public and authenticated routes, in the correct dependency order (register → login → SME / investor / admin flows, files, loans, market, payments, admin audit).
+
+**Prerequisites**
+
+- API running (e.g. Uvicorn on `http://127.0.0.1:8000`).
+- `.env` in the project root with a valid `DATABASE_URL` (the script updates KYC document rows in the DB after file uploads; same DB as the API).
+
+**Run** (from the project root, with your virtualenv activated):
+
+```bash
+python scripts/test_all_endpoints.py
+```
+
+Optional environment variables:
+
+- `FUNDL_API_BASE_URL` — default `http://127.0.0.1:8000`
+- `FUNDL_API_PASSWORD` — default `TestPassw0rd!` (test users get unique emails per run)
+
+## Database: idempotency columns & migrations
+
+The ORM expects optional **idempotency** storage on:
+
+| Table            | Column            | Purpose                                      |
+|------------------|-------------------|----------------------------------------------|
+| `orders`         | `idempotency_key` | `Idempotency-Key` on market listing orders   |
+| `ledger_entries` | `idempotency_key` | `Idempotency-Key` on disbursements / repayments |
+
+**Alembic** (when your DB role can create objects in `public` and run migrations):
+
+```bash
+alembic upgrade head
+```
+
+Revisions **`0002`** and **`0003`** add these columns and unique constraints. If Alembic cannot run (e.g. `permission denied for schema public`), a superuser can apply the same DDL manually; see `scripts/add_idempotency_columns.sql` for an idempotent `ALTER TABLE` / `CREATE UNIQUE INDEX` block you can append to your own DDL bundle.
+
+**Grants:** the application DB user needs `USAGE` (and typically `CREATE` on `public` if you use Alembic there) so Alembic can create `alembic_version` and apply revisions.
 
 ## Project Structure
 ```
 fundlok-backend/
+├── scripts/                    # API smoke test, optional DDL helpers
+├── alembic/                    # Database migrations (Alembic)
 ├── app/                        # Main application code
 │   ├── auth/                   # Authentication endpoints & logic
 │   │   ├── router.py
