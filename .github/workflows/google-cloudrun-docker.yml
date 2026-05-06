@@ -70,7 +70,7 @@ jobs:
           project_id: '${{ env.PROJECT_ID }}'
           # NOTE: If using a different source folder, update the image name below:
           source: './'
-          cloudsql_instances: 'fundlok:asia-southeast1:fundlok'
+          # cloudsql_instances: 'fundlok:asia-southeast1:fundlok'
           flags: '--add-cloudsql-instances fundlok:asia-southeast1:fundlok'
           env_vars: |
             DATABASE_URL=${{ secrets.FUNLOK_DB }}
