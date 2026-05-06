@@ -1,6 +1,8 @@
+# main.py
 import app.models  # noqa: F401 — register ORM mappers before routes
 
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware # Added for CORS support
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.admin.router import router as admin_router
@@ -22,6 +24,21 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# ================= CORS CONFIGURATION =================
+# Define the URLs allowed to access this API[cite: 5]
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Permits OPTIONS, POST, etc.
+    allow_headers=["*"],
+)
+# =====================================================
 
 @app.get("/health")
 def health_check():
@@ -32,9 +49,7 @@ def test_db(db: Session = Depends(get_db)):
     result = db.execute(text("SELECT 1")).scalar()
     return {"db_connected": result == 1}
 
-
-# Include routers **after** app is defined
-# temporarily commented out - edwardw 2006/03/09
+# Include routers
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(projects_router)
@@ -46,5 +61,3 @@ app.include_router(contracts_router)
 app.include_router(market_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
-
-

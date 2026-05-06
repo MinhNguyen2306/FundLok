@@ -120,31 +120,51 @@ Revisions **`0002`** and **`0003`** add these columns and unique constraints. If
 
 ## Project Structure
 ```
-fundlok-backend/
-├── scripts/                    # API smoke test, optional DDL helpers
-├── alembic/                    # Database migrations (Alembic)
-├── app/                        # Main application code
-│   ├── auth/                   # Authentication endpoints & logic
-│   │   ├── router.py
-│   │   ├── schemas.py
-│   │   └── service.py
-│   ├── core/                   # Shared config & database setup
-│   │   ├── config.py
-│   │   └── database.py
-│   ├── projects/               # Project-related endpoints (to be expanded)
-│   │   ├── router.py
-│   │   ├── schemas.py
-│   │   └── service.py
-│   ├── users/                  # User models & related logic
-│   │   └── models.py
-│   ├── utils/                  # Shared helpers (JWT, password hashing)
-│   │   ├── jwt.py
-│   │   └── password.py
-│   └── main.py                 # FastAPI app entry point
-├── db/                         # Database-related files (future)
-│   ├── migrations/             # Alembic migration scripts (planned)
-│   └── seeds/                  # Reference / lookup data SQL
-├── tests/                      # Unit & integration tests (future)
-├── .env.example                # Template for environment variables
-├── requirements.txt            # Python dependencies
-└── README.md                   # This file
+FundLok/
+├─ alembic/                     # Database migrations (Alembic)
+│  ├─ env.py
+│  ├─ README
+│  ├─ script.py.mako
+│  └─ versions/                 # Alembic migration scripts
+│     └─ 0001_initial_schema.py
+├─ alembic.ini                  # Configuration for Alembic migrations
+├─ app/                         # Main application code
+│  ├─ admin/                    # Administrative management endpoints
+│  ├─ auth/                     # Authentication endpoints & logic
+│  │  ├─ router.py
+│  │  ├─ schemas.py
+│  │  └─ service.py
+│  ├─ contracts/                # Contract management and generation services
+│  ├─ core/                     # Shared config & database setup
+│  │  ├─ config.py              # Application settings and configuration
+│  │  └─ database.py            # Database connection and session management
+│  ├─ files/                    # File handling services (e.g., KYC uploads)
+│  ├─ lending/                  # Core lending and KYC logic
+│  ├─ loans/                    # Loan processing and management logic
+│  ├─ main.py                   # FastAPI app entry point
+│  ├─ market/                   # Secondary market listings and orders
+│  ├─ models/                   # Global ORM models initialization
+│  ├─ payments/                 # Disbursement and repayment transaction logic
+│  ├─ projects/                 # Project-related endpoints (to be expanded)
+│  ├─ schemas/                  # Data validation and Pydantic settings
+│  ├─ sme/                      # SME-specific business workflows
+│  ├─ underwriting/             # Risk assessment and underwriting logic
+│  ├─ users/                    # User models & related logic
+│  │  ├─ models.py              # User database models
+│  │  └─ router.py
+│  └─ utils/                    # Shared helpers (JWT, password hashing)
+│     ├─ audit.py               # Audit logging utilities
+│     ├─ jwt.py                 # JWT token generation and validation
+│     ├─ password.py            # Password hashing (Argon2) and security
+│     └─ rbac.py                # Role-based access control logic
+├─ scripts/                     # API smoke tests and DDL helpers
+│  ├─ CreateDB_DDL.sql          # Database creation DDL script
+│  ├─ DDL.sql                   # Table structure definition script
+│  ├─ Setup_Table_Inserts.sql   # Reference and test data SQL
+│  └─ test_all_endpoints.py     # End-to-end API smoke test script
+├─ ci_test.txt                  # CI test logs or status
+├─ main.py                      # Root level execution script
+├─ README.md                    # Project documentation
+└─ requirements.txt             # Python project dependencies
+
+```

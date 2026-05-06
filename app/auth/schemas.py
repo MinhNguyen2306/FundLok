@@ -8,6 +8,7 @@ ALLOWED_ROLES = frozenset({"SME", "INVESTOR", "ADMIN"})
 class UserCreate(BaseModel):
     email: EmailStr
     phone: str | None = None
+    full_name: str
     password: str
     role: str
 
