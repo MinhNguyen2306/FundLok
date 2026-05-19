@@ -26,6 +26,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
+
 # ================= CORS CONFIGURATION =================
 # Define the URLs allowed to access this API[cite: 5]
 origins = [

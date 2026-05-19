@@ -130,6 +130,7 @@ def main() -> None:
                 json={
                     "email": sme_email,
                     "password": password,
+                    "full_name": "Test SME Owner",
                     "role": "SME",
                 },
             )
@@ -142,6 +143,7 @@ def main() -> None:
                 json={
                     "email": investor_email,
                     "password": password,
+                    "full_name": "Test Investor",
                     "role": "INVESTOR",
                 },
             )
@@ -154,6 +156,7 @@ def main() -> None:
                 json={
                     "email": admin_email,
                     "password": password,
+                    "full_name": "Test Admin",
                     "role": "ADMIN",
                 },
             )
