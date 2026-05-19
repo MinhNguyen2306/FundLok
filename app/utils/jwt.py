@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID as PyUUID
 
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from app.core.config import settings
@@ -27,6 +27,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer),
     db: Session = Depends(get_db),
 ):
@@ -35,9 +36,17 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if credentials is None or not credentials.credentials:
+    
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials.strip()
+        
+    if not token:
+        token = request.cookies.get("access_token")
+        
+    if not token:
         raise credentials_exception
-    token = credentials.credentials.strip()
+        
     try:
         payload = jwt.decode(
             token,
