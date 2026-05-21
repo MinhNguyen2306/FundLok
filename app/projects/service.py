@@ -53,3 +53,12 @@ def user_owns_project(db: Session, user_id: UUID, project_id: UUID) -> bool:
         .first()
         is not None
     )
+
+
+def display_projects(db: Session, current_user: User):
+    if current_user.role != Role.INVESTOR.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only investors can view projects",
+        )
+    return db.query(Project).filter(Project.status == "ACTIVE").all()
