@@ -27,7 +27,7 @@
 #
 # 3. Change the values in the "env" block to match your values.
 
-name: 'Deploy to Cloud Run from Source'
+name: 'deploy to Cloud Run from Source'
 
 on:
   push:
@@ -49,7 +49,7 @@ jobs:
       id-token: 'write'
 
     steps:
-      - name: 'Checkout'
+      - name: 'checkout'
         uses: 'actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332' # actions/checkout@v4
 
       # Configure Workload Identity Federation and generate an access token.
@@ -63,7 +63,7 @@ jobs:
           workload_identity_provider: 'projects/1086381007504/locations/global/workloadIdentityPools/fundlok/providers/github' # TODO: replace with your workload identity provider
           service_account: 'github-deploy@fundlok.iam.gserviceaccount.com'
 
-      - name: 'Deploy to Cloud Run'
+      - name: 'deploy to cloud run'
         uses: 'google-github-actions/deploy-cloudrun@v2' # google-github-actions/deploy-cloudrun@v2
         with:
           service: '${{ env.SERVICE }}'
