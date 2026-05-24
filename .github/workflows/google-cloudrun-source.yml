@@ -28,48 +28,43 @@
 # 3. Change the values in the "env" block to match your values.
 
 name: 'deploy to Cloud Run from Source'
-
 on:
   push:
     branches:
       - main
-
 env:
-  PROJECT_ID: 'fundlok' # TODO: update to your Google Cloud project ID
-  REGION: 'asia-southeast1' # TODO: update to your region
-  SERVICE: 'deployment-test' # TODO: update to your service name
-
+  PROJECT_ID: 'fundlok'
+  REGION: 'asia-southeast1'
+  SERVICE: 'deployment-test'
 jobs:
   deploy:
     runs-on: 'ubuntu-latest'
-
     permissions:
       contents: 'read'
       id-token: 'write'
-
     steps:
       - name: 'checkout'
-        uses: 'actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332' # actions/checkout@v4
+        uses: 'actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332'
 
-      # Configure Workload Identity Federation and generate an access token.
-      #
-      # See https://github.com/google-github-actions/auth for more options,
-      # including authenticating via a JSON credentials file.
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2' # google-github-actions/auth@v2
+        uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: 'projects/1086381007504/locations/global/workloadIdentityPools/fundlok/providers/github' # TODO: replace with your workload identity provider
+          workload_identity_provider: 'projects/1086381007504/locations/global/workloadIdentityPools/fundlok/providers/github'
           service_account: 'github-deploy@fundlok.iam.gserviceaccount.com'
 
-      - name: 'deploy to cloud run'
-        uses: 'google-github-actions/deploy-cloudrun@v2' # google-github-actions/deploy-cloudrun@v2
+      - name: 'Deploy to Cloud Run'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
         with:
           service: '${{ env.SERVICE }}'
           region: '${{ env.REGION }}'
           project_id: '${{ env.PROJECT_ID }}'
           source: './'
-      # If required, use the Cloud Run URL output in later steps
+          env_vars: |
+            GOOGLE_ENTRYPOINT=uvicorn app.main:app --host 0.0.0.0 --port $PORT
+            DATABASE_URL=${{ secrets.FUNLOK_DB }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+          flags: '--add-cloudsql-instances fundlok:asia-southeast1:fundlok'
+
       - name: 'Show output'
-        run: |-
-          echo ${{ steps.deploy.outputs.url }}
+        run: echo ${{ steps.deploy.outputs.url }}
