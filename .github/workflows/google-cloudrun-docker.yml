@@ -74,7 +74,7 @@ jobs:
           flags: '--add-cloudsql-instances fundlok:asia-southeast1:fundlok'
           env_vars: |
             DATABASE_URL=${{ secrets.FUNLOK_DB }}
-            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            SECRET_KEY=${{ secrets.FUNLOK_DB }}
 
       # If required, use the Cloud Run URL output in later steps
       - name: 'Show output'
