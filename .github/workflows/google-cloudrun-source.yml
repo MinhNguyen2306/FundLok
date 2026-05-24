@@ -33,6 +33,7 @@ on:
   push:
     branches:
       - main
+      - feature/test-ci
 
 env:
   PROJECT_ID: 'fundlok' # TODO: update to your Google Cloud project ID
@@ -60,7 +61,7 @@ jobs:
         uses: 'google-github-actions/auth@v2' # google-github-actions/auth@v2
         with:
           workload_identity_provider: 'projects/1086381007504/locations/global/workloadIdentityPools/fundlok/providers/github' # TODO: replace with your workload identity provider
-          service_account: 'github-deployer@fundlok.iam.gserviceaccount.com'
+          service_account: 'github-deploy@fundlok.iam.gserviceaccount.com'
 
       - name: 'Deploy to Cloud Run'
         uses: 'google-github-actions/deploy-cloudrun@v2' # google-github-actions/deploy-cloudrun@v2
