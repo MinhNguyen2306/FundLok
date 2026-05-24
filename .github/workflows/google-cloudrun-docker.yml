@@ -17,7 +17,7 @@
 #    https://github.com/google-github-actions/auth#preferred-direct-workload-identity-federation.
 #
 #    Depending on how you authenticate, you will need to grant an IAM principal
-#    permissions on Google Cloud:
+#    permissions on Google Cloud: 
 #
 #    - Artifact Registry Administrator (roles/artifactregistry.admin)
 #    - Cloud Run Source Developer (roles/run.sourceDeveloper)
