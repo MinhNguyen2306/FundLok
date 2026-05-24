@@ -38,7 +38,7 @@ on:
 env:
   PROJECT_ID: 'fundlok' # TODO: update to your Google Cloud project ID
   REGION: 'asia-southeast1' # TODO: update to your region
-  SERVICE: 'deployment_test' # TODO: update to your service name
+  SERVICE: 'deployment test' # TODO: update to your service name
 
 jobs:
   deploy:
