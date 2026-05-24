@@ -32,7 +32,6 @@ name: 'deploy to Cloud Run from Source'
 on:
   push:
     branches:
-      - main
       - feature/test-ci
 
 env:
