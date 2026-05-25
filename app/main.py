@@ -69,8 +69,8 @@ app.include_router(admin_router)
 if __name__ == "__main__":
     # Get the port from Cloud Run environment (default to 8080 if not set)
     # If running locally, it will use port 8000
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8080))
     
     # Run the application
     # host="0.0.0.0" allows the server to accept connections from outside the container
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port)

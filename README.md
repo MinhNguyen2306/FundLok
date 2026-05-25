@@ -69,9 +69,11 @@ Contact Admin for details, to be copied into .env in project root directory.
 6. **Start the server**
 
    ```bash
-   python -m venv venv
-   source venv/bin/activate    # Mac/Linux
-   
+   uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+   ```
+
+   For Cloud Run, set `DATABASE_URL` and `SECRET_KEY` in the service environment variables. If either one is missing, the app fails during import and the container never reaches the listening state.
+
 7. **Open Swagger UI**
 
    ```bash
@@ -143,9 +145,10 @@ FundLok/
 │  ├─ loans/                    # Loan processing and management logic
 │  ├─ main.py                   # FastAPI app entry point
 │  ├─ market/                   # Secondary market listings and orders
-│  ├─ models/                   # Global ORM models initialization
-│  ├─ payments/                 # Disbursement and repayment transaction logic
+   uvicorn main:app --host 0.0.0.0 --port 8080 --reload
 │  ├─ projects/                 # Project-related endpoints (to be expanded)
+
+   Cloud Run must also receive `DATABASE_URL` and `SECRET_KEY` as service environment variables. If either one is missing, the app fails during import and the container never reaches the listening state.
 │  ├─ schemas/                  # Data validation and Pydantic settings
 │  ├─ sme/                      # SME-specific business workflows
 │  ├─ underwriting/             # Risk assessment and underwriting logic
