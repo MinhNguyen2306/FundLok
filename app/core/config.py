@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    GOOGLE_CLIENT_ID: str | None = None
+    MICROSOFT_CLIENT_ID: str | None = None
+    MICROSOFT_TENANT_ID: str = "common"
     MOCK_UPLOAD_BASE_URL: str = "https://mock-storage.fundlok.local/upload"
 
 

@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.files.router import router as files_router
 from app.loans.router import router as loans_router
 from app.market.router import router as market_router
+from app.oauth.router import router as oauth_router
 from app.payments.router import router as payments_router
 from app.projects.router import router as projects_router
 from app.sme.router import router as sme_router
@@ -55,6 +56,7 @@ def test_db(db: Session = Depends(get_db)):
 
 # Include routers
 app.include_router(auth_router)
+app.include_router(oauth_router)
 app.include_router(users_router)
 app.include_router(projects_router)
 app.include_router(sme_router)
