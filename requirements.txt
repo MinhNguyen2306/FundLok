@@ -24,3 +24,5 @@ argon2-cffi   #I added this due to the 72 bcrypt error
 
 fastapi-mail>=1.4.1
 pydantic[email]
+
+google-cloud-storage
