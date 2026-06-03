@@ -76,3 +76,8 @@ class RefreshRequest(BaseModel):
 
 class TokenData(BaseModel):
     user_id: str | None = None
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
