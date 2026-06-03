@@ -68,3 +68,28 @@ def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+def create_verification_token(user_id: str) -> str:
+    return create_access_token(
+        data={"sub": str(user_id), "purpose": "email_verification"},
+        expires_delta=timedelta(hours=24)
+    )
+
+
+def verify_email_token(token: str) -> str:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_aud": False},
+        )
+        if payload.get("purpose") != "email_verification":
+            raise HTTPException(status_code=400, detail="Invalid token purpose")
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Invalid token claim")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")

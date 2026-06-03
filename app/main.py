@@ -3,7 +3,7 @@ import app.models  # noqa: F401 — register ORM mappers before routes
 import os
 import uvicorn
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware # Added for CORS support
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -53,6 +53,7 @@ def health_check():
 def test_db(db: Session = Depends(get_db)):
     result = db.execute(text("SELECT 1")).scalar()
     return {"db_connected": result == 1}
+
 
 # Include routers
 app.include_router(auth_router)

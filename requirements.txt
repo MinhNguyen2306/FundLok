@@ -21,3 +21,6 @@ pytest>=8.0.0            # for tests (add later)
 
 email-validator>=2.0.0.post1   # for email validation in Pydantic
 argon2-cffi   #I added this due to the 72 bcrypt error
+
+fastapi-mail>=1.4.1
+pydantic[email]

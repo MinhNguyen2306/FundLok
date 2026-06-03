@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: str | None = None
     MICROSOFT_TENANT_ID: str = "common"
     MOCK_UPLOAD_BASE_URL: str = "https://mock-storage.fundlok.local/upload"
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # SMTP Configuration
+    SMTP_HOST: str = "localhost"
+    SMTP_PORT: int = 1025
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_SECURE: bool = False
+    EMAILS_FROM_EMAIL: str = "noreply@fundlok.com"
+    EMAILS_FROM_NAME: str = "FundLok"
+
 
 
 settings = Settings()

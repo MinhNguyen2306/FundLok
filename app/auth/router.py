@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.auth.schemas import Token, LoginRequest, UserCreate, UserOut, RefreshRequest
+from app.auth.schemas import Token, LoginRequest, UserCreate, UserOut, RefreshRequest, ResendVerificationRequest
 from app.auth.service import authenticate_user, create_token_pair, refresh_token_pair
 from app.users.models import User
 from app.utils.password import hash_password
+from app.utils.jwt import create_verification_token, verify_email_token
+from app.utils.email import send_verification_email
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -26,7 +28,7 @@ def simple_login(response: Response, login_data: LoginRequest, db: Session = Dep
 
 
 @router.post("/register", response_model=UserOut)
-def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -41,11 +43,54 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         password_hash=hashed,
         role=user.role,
         status="ACTIVE",
+        email_verified=False,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # Generate verification token and send verification email in background
+    token = create_verification_token(new_user.id)
+    background_tasks.add_task(send_verification_email, to_email=new_user.email, token=token)
+
     return new_user
+
+
+@router.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    user_id = verify_email_token(token)
+    from uuid import UUID as PyUUID
+    try:
+        uid = PyUUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid token details")
+        
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if user.email_verified:
+        return {"status": "success", "message": "Email already verified"}
+        
+    user.email_verified = True
+    db.commit()
+    return {"status": "success", "message": "Email verified successfully"}
+
+
+@router.post("/resend-verification")
+def resend_verification(body: ResendVerificationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user:
+        # Avoid user enumeration by returning a success-like message even if user doesn't exist
+        return {"status": "success", "message": "If the email exists, a verification link has been sent."}
+        
+    if user.email_verified:
+        return {"status": "success", "message": "Email already verified"}
+        
+    token = create_verification_token(user.id)
+    background_tasks.add_task(send_verification_email, to_email=user.email, token=token)
+    return {"status": "success", "message": "Verification link has been sent."}
+
 
 
 @router.post("/refresh", response_model=Token)

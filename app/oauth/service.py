@@ -91,6 +91,7 @@ class OAuthProviderBase(ABC):
             password_hash=token_urlsafe(32),
             role="SME",
             status="ACTIVE",
+            email_verified= True,
         )
         db.add(user)
         db.flush()

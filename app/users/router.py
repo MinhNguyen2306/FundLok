@@ -13,5 +13,6 @@ def read_current_user(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role": current_user.role,
-        "status": current_user.status
+        "status": current_user.status,
+        "email_verified": current_user.email_verified
     }
