@@ -6,7 +6,7 @@
 # 1. Enable the following Google Cloud APIs:
 #
 #    - Artifact Registry (artifactregistry.googleapis.com)
-#    - Cloud Build (cloudbuild.googleapis.com)
+#    - Cloud Build (cloudbuild.googleapis.com) 
 #    - Cloud Run (run.googleapis.com)
 #    - IAM Credentials API (iamcredentials.googleapis.com)
 #
