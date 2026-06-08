@@ -7,6 +7,8 @@ from app.users.models import User
 from app.utils.password import hash_password
 from app.utils.jwt import create_verification_token, verify_email_token
 from app.utils.email import send_verification_email
+import httpx
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -14,6 +16,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=UserOut)  # ← was Token
 def simple_login(response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
+    if not login_data.turnstile_token:
+        raise HTTPException(status_code=400, detail="Turnstile token is missing")
+
+    if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
+        verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+        payload = {
+            "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+            "response": login_data.turnstile_token
+        }
+        try:
+            with httpx.Client() as client:
+                resp = client.post(verify_url, data=payload)
+                result = resp.json()
+                if not result.get("success"):
+                    raise HTTPException(status_code=400, detail="Cloudflare Turnstile verification failed")
+        except httpx.RequestError:
+            raise HTTPException(status_code=500, detail="Error communicating with captcha service")
+
     user = authenticate_user(db, login_data.email, login_data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
@@ -29,6 +49,24 @@ def simple_login(response: Response, login_data: LoginRequest, db: Session = Dep
 
 @router.post("/register", response_model=UserOut)
 def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not user.turnstile_token:
+        raise HTTPException(status_code=400, detail="Turnstile token is missing")
+
+    if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
+        verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+        payload = {
+            "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+            "response": user.turnstile_token
+        }
+        try:
+            with httpx.Client() as client:
+                resp = client.post(verify_url, data=payload)
+                result = resp.json()
+                if not result.get("success"):
+                    raise HTTPException(status_code=400, detail="Cloudflare Turnstile verification failed")
+        except httpx.RequestError:
+            raise HTTPException(status_code=500, detail="Error communicating with captcha service")
+
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 

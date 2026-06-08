@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
     full_name: str
     password: str
     role: str
+    turnstile_token: str | None = None
 
     @field_validator("phone", mode="before")
     @classmethod
@@ -62,6 +63,7 @@ class UserOut(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    turnstile_token: str | None = None
 
 
 class Token(BaseModel):

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     MICROSOFT_TENANT_ID: str = "common"
     MOCK_UPLOAD_BASE_URL: str = "https://mock-storage.fundlok.local/upload"
     FRONTEND_URL: str = "http://localhost:3000"
+    CLOUDFLARE_TURNSTILE_SECRET_KEY: str | None = None
 
     # SMTP Configuration
     SMTP_HOST: str = "localhost"
