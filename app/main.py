@@ -20,6 +20,7 @@ from app.projects.router import router as projects_router
 from app.sme.router import router as sme_router
 from app.underwriting.router import router as underwriting_router
 from app.users.router import router as users_router
+from app.contact.router import router as contact_router
 
 app = FastAPI(
     title="FundLok API",
@@ -68,6 +69,7 @@ app.include_router(contracts_router)
 app.include_router(market_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
+app.include_router(contact_router)
 
 if __name__ == "__main__":
     # Get the port from Cloud Run environment (default to 8080 if not set)

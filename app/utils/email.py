@@ -96,3 +96,44 @@ def send_verification_email(to_email: str, token: str) -> None:
         text_content=text_content
     )
 
+def send_contact_autoreply(to_email: str, name: str) -> None:
+    subject = "We have received your message - FundLok"
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }}
+        .wrapper {{ background-color: #f4f7f6; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 12px; }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="container">
+          <div class="header">
+            <h2>Thank you for contacting FundLok!</h2>
+          </div>
+          <div class="content">
+            <p>Hi {name},</p>
+            <p>We have successfully received your information. Our team will review your message and get back to you as soon as possible.</p>
+            <p>Best regards,<br/>The FundLok Team</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    
+    text_content = f"Hi {name},\n\nWe have successfully received your information. Our team will review your message and get back to you as soon as possible.\n\nBest regards,\nThe FundLok Team"
+    
+    send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content
+    )
