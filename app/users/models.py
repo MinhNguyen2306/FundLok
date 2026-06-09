@@ -27,7 +27,6 @@ class User(Base):
     status = Column(Text, nullable=False, server_default="ACTIVE")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
     project_ownerships = relationship("ProjectOwnership", back_populates="user")
     orders = relationship("Order", back_populates="investor")
     holdings = relationship("Holding", back_populates="investor")
