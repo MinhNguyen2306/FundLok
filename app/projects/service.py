@@ -8,25 +8,41 @@ from app.projects.schemas import ProjectCreate
 from app.users.models import Role, User
 
 
+from sqlalchemy.exc import IntegrityError
+
+
 def create_project(db: Session, project_data: ProjectCreate, current_user: User):
     if current_user.role != Role.SME.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only SMEs can create projects",
         )
-    new_project = Project(**project_data.model_dump(), status="DRAFT")
-    db.add(new_project)
-    db.flush()
-    db.add(
-        ProjectOwnership(
-            project_id=new_project.id,
-            user_id=current_user.id,
-            role="OWNER",
+    try:
+        new_project = Project(**project_data.model_dump(), status="DRAFT")
+        db.add(new_project)
+        db.flush()
+        db.add(
+            ProjectOwnership(
+                project_id=new_project.id,
+                user_id=current_user.id,
+                role="OWNER",
+            )
         )
-    )
-    db.flush()
-    db.refresh(new_project)
-    return new_project
+        db.flush()
+        db.refresh(new_project)
+        return new_project
+    except IntegrityError as e:
+        db.rollback()
+        err_msg = str(e.orig)
+        if "tax_id" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your bussiness tax ID is already associated with another project. Please contact support if you believe this is an error.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Database integrity error: check unique fields or constraints."
+        )
 
 
 def get_my_projects(db: Session, current_user: User):
