@@ -25,12 +25,18 @@ services:
     environment:
       MP_MAX_MESSAGES: 5000
 
-  gcs-emulator:
-    image: fsouza/fake-gcs-server:latest
-    container_name: gcs-emulator
+  minio:
+    image: minio/minio:latest
+    container_name: minio
     ports:
-      - "4443:4443"
-    command: -backend memory -external-url http://localhost:4443
+      - "9000:9000"   # S3 API port
+      - "9001:9001"   # Web UI console port
+    environment:
+      MINIO_ROOT_USER: "minioadmin"
+      MINIO_ROOT_PASSWORD: "minioadmin"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
 
 volumes:
   postgres_data:
