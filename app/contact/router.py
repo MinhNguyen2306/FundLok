@@ -8,10 +8,10 @@ router = APIRouter(prefix="/contact", tags=["contact"])
 
 @router.post("")
 def submit_contact_form(contact: ContactRequest, background_tasks: BackgroundTasks):
-    if not contact.turnstile_token:
-        raise HTTPException(status_code=400, detail="Turnstile token is missing")
-
     if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
+        if not contact.turnstile_token:
+            raise HTTPException(status_code=400, detail="Turnstile token is missing")
+
         verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
         payload = {
             "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,

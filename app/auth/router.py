@@ -16,10 +16,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=UserOut)  # ← was Token
 def simple_login(response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
-    if not login_data.turnstile_token:
-        raise HTTPException(status_code=400, detail="Turnstile token is missing")
-
     if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
+        if not login_data.turnstile_token:
+            raise HTTPException(status_code=400, detail="Turnstile token is missing")
+
         verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
         payload = {
             "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
@@ -49,10 +49,10 @@ def simple_login(response: Response, login_data: LoginRequest, db: Session = Dep
 
 @router.post("/register", response_model=UserOut)
 def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if not user.turnstile_token:
-        raise HTTPException(status_code=400, detail="Turnstile token is missing")
-
     if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
+        if not user.turnstile_token:
+            raise HTTPException(status_code=400, detail="Turnstile token is missing")
+
         verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
         payload = {
             "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
