@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
@@ -93,6 +94,9 @@ class LoanApplication(Base):
     application_documents = relationship(
         "ApplicationDocument", back_populates="application", cascade="all, delete-orphan"
     )
+    documents = relationship(
+        "LoanApplicationDocument", back_populates="application", cascade="all, delete-orphan"
+    )
 
 
 class ApplicationDocument(Base):
@@ -105,6 +109,41 @@ class ApplicationDocument(Base):
 
     application = relationship("LoanApplication", back_populates="application_documents")
     document = relationship("Document")
+
+
+class LoanApplicationDocument(Base):
+    """One row per file uploaded for a loan application (R2 object).
+
+    The R2 key is generated server-side; original_filename is display metadata only.
+    Status: PENDING (presigned, not yet verified in R2) -> UPLOADED (HEAD-checked).
+    """
+
+    __tablename__ = "loan_application_documents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_application_id = Column(
+        UUID(as_uuid=True), ForeignKey("loan_applications.id", ondelete="CASCADE"), nullable=False
+    )
+    document_type = Column(Text, nullable=False)
+    file_key = Column(Text, unique=True, nullable=False)
+    original_filename = Column(Text, nullable=False)
+    content_type = Column(Text)
+    file_size_bytes = Column(BigInteger)
+    status = Column(Text, nullable=False, server_default="PENDING")
+    uploaded_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    application = relationship("LoanApplication", back_populates="documents")
+
+    __table_args__ = (
+        Index(
+            "ix_loan_application_documents_app_doc_type",
+            "loan_application_id",
+            "document_type",
+            unique=True,
+        ),
+    )
 
 
 class ScoreRun(Base):

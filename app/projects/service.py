@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from fastapi import HTTPException, status
 
-from app.lending.models import Project, ProjectOwnership
+from app.lending.models import LoanApplication, Project, ProjectOwnership
 from app.projects.schemas import ProjectCreate
 from app.users.models import Role, User
 
@@ -11,14 +11,18 @@ from app.users.models import Role, User
 from sqlalchemy.exc import IntegrityError
 
 
-def create_project(db: Session, project_data: ProjectCreate, current_user: User):
+def create_project(
+    db: Session, project_data: ProjectCreate, current_user: User
+) -> tuple[Project, LoanApplication | None]:
     if current_user.role != Role.SME.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only SMEs can create projects",
         )
     try:
-        new_project = Project(**project_data.model_dump(), status="DRAFT")
+        new_project = Project(
+            **project_data.model_dump(exclude={"loan_application"}), status="DRAFT"
+        )
         db.add(new_project)
         db.flush()
         db.add(
@@ -29,8 +33,20 @@ def create_project(db: Session, project_data: ProjectCreate, current_user: User)
             )
         )
         db.flush()
+        loan_app = None
+        if project_data.loan_application is not None:
+            loan_app = LoanApplication(
+                project_id=new_project.id,
+                requested_amount=project_data.loan_application.requested_amount,
+                purpose=project_data.loan_application.purpose,
+                repayment_preference=project_data.loan_application.repayment_preference,
+                status="DRAFT",
+            )
+            db.add(loan_app)
+            db.flush()
+            db.refresh(loan_app)
         db.refresh(new_project)
-        return new_project
+        return new_project, loan_app
     except IntegrityError as e:
         db.rollback()
         err_msg = str(e.orig)
@@ -55,8 +71,15 @@ def get_my_projects(db: Session, current_user: User):
         db.query(Project)
         .join(ProjectOwnership)
         .filter(ProjectOwnership.user_id == current_user.id)
+        .options(
+            selectinload(Project.loan_applications).selectinload(
+                LoanApplication.documents
+            )
+        )
     )
     return q.all()
+
+
 
 
 def user_owns_project(db: Session, user_id: UUID, project_id: UUID) -> bool:
