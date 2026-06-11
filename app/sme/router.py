@@ -20,7 +20,7 @@ def create_business(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    project = create_project(db, body, current_user)
+    project, _loan_app = create_project(db, body, current_user)
     append_audit(
         db,
         entity_type="PROJECT",

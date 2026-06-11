@@ -9,6 +9,7 @@ from app.lending.models import (  # noqa: F401
     LedgerEntry,
     Listing,
     LoanApplication,
+    LoanApplicationDocument,
     Order,
     Project,
     ProjectOwnership,
