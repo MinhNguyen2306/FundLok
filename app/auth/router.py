@@ -1,13 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.auth.schemas import Token, LoginRequest, UserCreate, UserOut, RefreshRequest, ResendVerificationRequest
+from app.auth.schemas import (
+    Token,
+    LoginRequest,
+    UserCreate,
+    UserOut,
+    RefreshRequest,
+    ResendVerificationRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+)
 from app.auth.service import authenticate_user, create_token_pair, refresh_token_pair
 from app.users.models import User
 from app.utils.password import hash_password
-from app.utils.jwt import create_verification_token, verify_email_token
-from app.utils.email import send_verification_email
-import httpx
+from app.utils.jwt import (
+    create_verification_token,
+    verify_email_token,
+    create_password_reset_token,
+    verify_password_reset_token,
+)
+from app.utils.email import send_verification_email, send_password_reset_email
+from app.utils.captcha import verify_turnstile_token
 from app.core.config import settings
 
 
@@ -16,23 +30,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=UserOut)  # ← was Token
 def simple_login(response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
-    if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
-        if not login_data.turnstile_token:
-            raise HTTPException(status_code=400, detail="Turnstile token is missing")
-
-        verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-        payload = {
-            "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
-            "response": login_data.turnstile_token
-        }
-        try:
-            with httpx.Client() as client:
-                resp = client.post(verify_url, data=payload)
-                result = resp.json()
-                if not result.get("success"):
-                    raise HTTPException(status_code=400, detail="Cloudflare Turnstile verification failed")
-        except httpx.RequestError:
-            raise HTTPException(status_code=500, detail="Error communicating with captcha service")
+    verify_turnstile_token(login_data.turnstile_token)
 
     user = authenticate_user(db, login_data.email, login_data.password)
     if not user:
@@ -49,23 +47,7 @@ def simple_login(response: Response, login_data: LoginRequest, db: Session = Dep
 
 @router.post("/register", response_model=UserOut)
 def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if settings.CLOUDFLARE_TURNSTILE_SECRET_KEY:
-        if not user.turnstile_token:
-            raise HTTPException(status_code=400, detail="Turnstile token is missing")
-
-        verify_url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-        payload = {
-            "secret": settings.CLOUDFLARE_TURNSTILE_SECRET_KEY,
-            "response": user.turnstile_token
-        }
-        try:
-            with httpx.Client() as client:
-                resp = client.post(verify_url, data=payload)
-                result = resp.json()
-                if not result.get("success"):
-                    raise HTTPException(status_code=400, detail="Cloudflare Turnstile verification failed")
-        except httpx.RequestError:
-            raise HTTPException(status_code=500, detail="Error communicating with captcha service")
+    verify_turnstile_token(user.turnstile_token)
 
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -174,3 +156,35 @@ def logout(response: Response):
     response.delete_cookie(key="access_token", httponly=True, samesite="lax")
     response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
     return {"status": "success", "message": "Logged out successfully"}
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    verify_turnstile_token(body.turnstile_token)
+    
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user:
+        # Avoid user enumeration by returning a success message even if email is not found
+        return {"status": "success", "message": "If the email is registered, a password reset link has been sent."}
+        
+    token = create_password_reset_token(user.id)
+    background_tasks.add_task(send_password_reset_email, to_email=user.email, token=token)
+    return {"status": "success", "message": "If the email is registered, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user_id = verify_password_reset_token(body.token)
+    from uuid import UUID as PyUUID
+    try:
+        uid = PyUUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid token details")
+        
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return {"status": "success", "message": "Password reset successfully"}

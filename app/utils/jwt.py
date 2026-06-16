@@ -93,3 +93,28 @@ def verify_email_token(token: str) -> str:
         return user_id
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+
+
+def create_password_reset_token(user_id: str) -> str:
+    return create_access_token(
+        data={"sub": str(user_id), "purpose": "password_reset"},
+        expires_delta=timedelta(hours=1)
+    )
+
+
+def verify_password_reset_token(token: str) -> str:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_aud": False},
+        )
+        if payload.get("purpose") != "password_reset":
+            raise HTTPException(status_code=400, detail="Invalid token purpose")
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Invalid token claim")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")

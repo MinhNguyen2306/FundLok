@@ -83,3 +83,20 @@ class TokenData(BaseModel):
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    turnstile_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_length(cls, v: str):
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password too long for bcrypt")
+        return v
+

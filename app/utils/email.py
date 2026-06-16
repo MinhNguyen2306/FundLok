@@ -137,3 +137,63 @@ def send_contact_autoreply(to_email: str, name: str) -> None:
         html_content=html_content,
         text_content=text_content
     )
+
+
+def send_password_reset_email(to_email: str, token: str) -> None:
+    from datetime import datetime
+    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+    
+    subject = "Reset your password for FundLok"
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }}
+        .wrapper {{ background-color: #f4f7f6; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .title {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0; }}
+        .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
+        .cta-container {{ text-align: center; margin: 35px 0; }}
+        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #4f46e5; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }}
+        .footer {{ text-align: center; color: #9ca3af; font-size: 13px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="container">
+          <div class="header">
+            <h1 class="title">Reset Your Password</h1>
+          </div>
+          <div class="content">
+            <p>You requested to reset your password for your <strong>FundLok</strong> account. Click the button below to set a new password:</p>
+          </div>
+          <div class="cta-container">
+            <a href="{reset_link}" class="cta-button" style="color: #ffffff;">Reset Password</a>
+          </div>
+          <div class="content">
+            <p>If the button doesn't work, you can copy and paste the following link into your browser:</p>
+            <p style="word-break: break-all;"><a href="{reset_link}" style="color: #4f46e5;">{reset_link}</a></p>
+            <p>This password reset link will expire in 1 hour.</p>
+            <p>If you did not request a password reset, please ignore this email.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; {datetime.now().year} FundLok. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    
+    text_content = f"Please reset your password by visiting this link: {reset_link}"
+    
+    send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content
+    )
