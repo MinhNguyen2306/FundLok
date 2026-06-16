@@ -82,6 +82,12 @@ class OAuthProviderBase(ABC):
     def get_or_create_user(self, db: Session, user_info: OAuthUserInfo) -> User:
         user = db.query(User).filter(User.email == user_info.email).first()
         if user:
+            # The provider has already confirmed ownership of this email, so an
+            # existing account that signed up via email/password should be
+            # considered verified once they log in through OAuth.
+            if user_info.email_verified and not user.email_verified:
+                user.email_verified = True
+                db.flush()
             return user
 
         user = User(
