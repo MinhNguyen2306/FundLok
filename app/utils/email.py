@@ -57,7 +57,7 @@ def send_verification_email(to_email: str, token: str) -> None:
         .title {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0; }}
         .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
         .cta-container {{ text-align: center; margin: 35px 0; }}
-        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #4f46e5; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }}
+        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #16a34a; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.25); }}
         .footer {{ text-align: center; color: #9ca3af; font-size: 13px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px; }}
       </style>
     </head>
@@ -75,7 +75,7 @@ def send_verification_email(to_email: str, token: str) -> None:
           </div>
           <div class="content">
             <p>If the button doesn't work, you can copy and paste the following link into your browser:</p>
-            <p style="word-break: break-all;"><a href="{verification_link}" style="color: #4f46e5;">{verification_link}</a></p>
+            <p style="word-break: break-all;"><a href="{verification_link}" style="color: #16a34a;">{verification_link}</a></p>
             <p>This verification link will expire in 24 hours.</p>
           </div>
           <div class="footer">
@@ -158,7 +158,7 @@ def send_password_reset_email(to_email: str, token: str) -> None:
         .title {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0; }}
         .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
         .cta-container {{ text-align: center; margin: 35px 0; }}
-        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #4f46e5; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }}
+        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #16a34a; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.25); }}
         .footer {{ text-align: center; color: #9ca3af; font-size: 13px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px; }}
       </style>
     </head>
@@ -176,7 +176,7 @@ def send_password_reset_email(to_email: str, token: str) -> None:
           </div>
           <div class="content">
             <p>If the button doesn't work, you can copy and paste the following link into your browser:</p>
-            <p style="word-break: break-all;"><a href="{reset_link}" style="color: #4f46e5;">{reset_link}</a></p>
+            <p style="word-break: break-all;"><a href="{reset_link}" style="color: #16a34a;">{reset_link}</a></p>
             <p>This password reset link will expire in 1 hour.</p>
             <p>If you did not request a password reset, please ignore this email.</p>
           </div>
