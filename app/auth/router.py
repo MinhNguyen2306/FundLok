@@ -1,153 +1,70 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
+
 from app.core.database import get_db
 from app.auth.schemas import (
-    Token,
+    ForgotPasswordRequest,
     LoginRequest,
-    UserCreate,
-    UserOut,
     RefreshRequest,
     ResendVerificationRequest,
-    ForgotPasswordRequest,
     ResetPasswordRequest,
+    Token,
+    UserCreate,
+    UserOut,
 )
-from app.auth.service import authenticate_user, create_token_pair, refresh_token_pair
-from app.users.models import User
-from app.utils.password import hash_password
-from app.utils.jwt import (
-    create_verification_token,
-    verify_email_token,
-    create_password_reset_token,
-    verify_password_reset_token,
-)
-from app.utils.email import send_verification_email, send_password_reset_email
-from app.utils.captcha import verify_turnstile_token
-from app.core.config import settings
-
+from app.auth import service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+ACCESS_COOKIE_MAX_AGE = 30 * 60  # 30 minutes
+REFRESH_COOKIE_MAX_AGE = 14 * 24 * 60 * 60  # 14 days
 
-@router.post("/login", response_model=UserOut)  # ← was Token
+
+def _set_auth_cookies(response: Response, tokens: dict) -> None:
+    response.set_cookie(
+        key="access_token", value=tokens["access_token"],
+        httponly=True, samesite="lax", secure=False, max_age=ACCESS_COOKIE_MAX_AGE,
+    )
+    response.set_cookie(
+        key="refresh_token", value=tokens["refresh_token"],
+        httponly=True, samesite="lax", secure=False, max_age=REFRESH_COOKIE_MAX_AGE,
+    )
+
+
+@router.post("/login", response_model=UserOut)
 def simple_login(response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
-    verify_turnstile_token(login_data.turnstile_token)
-
-    user = authenticate_user(db, login_data.email, login_data.password)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Incorrect email or password")
-    tokens = create_token_pair(db, user.id)
-    db.commit()
-    response.set_cookie(key="access_token", value=tokens["access_token"],
-                        httponly=True, samesite="lax", secure=False, max_age=30 * 60)
-    response.set_cookie(key="refresh_token", value=tokens["refresh_token"],
-                        httponly=True, samesite="lax", secure=False, max_age=14 * 24 * 60 * 60)
-    return user  # ← return user, not tokens
+    user, tokens = service.login(db, login_data)
+    _set_auth_cookies(response, tokens)
+    return user
 
 
 @router.post("/register", response_model=UserOut)
 def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    verify_turnstile_token(user.turnstile_token)
-
-    if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    if user.phone and db.query(User).filter(User.phone == user.phone).first():
-        raise HTTPException(status_code=400, detail="Phone number already registered")
-
-    hashed = hash_password(user.password)
-    new_user = User(
-        email=user.email,
-        phone=user.phone,
-        full_name=user.full_name,
-        password_hash=hashed,
-        role=user.role,
-        status="ACTIVE",
-        email_verified=False,
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    # Generate verification token and send verification email in background
-    token = create_verification_token(new_user.id)
-    background_tasks.add_task(send_verification_email, to_email=new_user.email, token=token)
-
-    return new_user
+    return service.register_user(db, user, background_tasks)
 
 
 @router.get("/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
-    user_id = verify_email_token(token)
-    from uuid import UUID as PyUUID
-    try:
-        uid = PyUUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid token details")
-        
-    user = db.query(User).filter(User.id == uid).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    if user.email_verified:
-        return {"status": "success", "message": "Email already verified"}
-        
-    user.email_verified = True
-    db.commit()
-    return {"status": "success", "message": "Email verified successfully"}
+    return service.verify_email(db, token)
 
 
 @router.post("/resend-verification")
 def resend_verification(body: ResendVerificationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == body.email).first()
-    if not user:
-        # Avoid user enumeration by returning a success-like message even if user doesn't exist
-        return {"status": "success", "message": "If the email exists, a verification link has been sent."}
-        
-    if user.email_verified:
-        return {"status": "success", "message": "Email already verified"}
-        
-    token = create_verification_token(user.id)
-    background_tasks.add_task(send_verification_email, to_email=user.email, token=token)
-    return {"status": "success", "message": "Verification link has been sent."}
-
+    return service.resend_verification(db, body.email, background_tasks)
 
 
 @router.post("/refresh", response_model=Token)
 def refresh_tokens(request: Request, response: Response, body: RefreshRequest = None, db: Session = Depends(get_db)):
-    refresh_token = None
-    if body and body.refresh_token:
-        refresh_token = body.refresh_token
-    else:
-        refresh_token = request.cookies.get("refresh_token")
-        
+    refresh_token = body.refresh_token if body and body.refresh_token else request.cookies.get("refresh_token")
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token missing",
         )
-        
-    tokens = refresh_token_pair(db, refresh_token)
+
+    tokens = service.refresh_token_pair(db, refresh_token)
     db.commit()
-    
-    # Set the rotated cookies in the response
-    response.set_cookie(
-        key="access_token",
-        value=tokens["access_token"],
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        max_age=30 * 60,
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=tokens["refresh_token"],
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        max_age=14 * 24 * 60 * 60,
-    )
-    
+    _set_auth_cookies(response, tokens)
     return tokens
 
 
@@ -160,31 +77,9 @@ def logout(response: Response):
 
 @router.post("/forgot-password")
 def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    verify_turnstile_token(body.turnstile_token)
-    
-    user = db.query(User).filter(User.email == body.email).first()
-    if not user:
-        # Avoid user enumeration by returning a success message even if email is not found
-        return {"status": "success", "message": "If the email is registered, a password reset link has been sent."}
-        
-    token = create_password_reset_token(user.id)
-    background_tasks.add_task(send_password_reset_email, to_email=user.email, token=token)
-    return {"status": "success", "message": "If the email is registered, a password reset link has been sent."}
+    return service.forgot_password(db, body, background_tasks)
 
 
 @router.post("/reset-password")
 def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    user_id = verify_password_reset_token(body.token)
-    from uuid import UUID as PyUUID
-    try:
-        uid = PyUUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid token details")
-        
-    user = db.query(User).filter(User.id == uid).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    user.password_hash = hash_password(body.new_password)
-    db.commit()
-    return {"status": "success", "message": "Password reset successfully"}
+    return service.reset_password(db, body)
