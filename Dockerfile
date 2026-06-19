@@ -10,4 +10,7 @@ COPY . .
 
 ENV PORT=8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+RUN chmod +x /app/docker/entrypoint.sh
+
+# Runs `alembic upgrade head` then starts uvicorn (see docker/entrypoint.sh).
+CMD ["/app/docker/entrypoint.sh"]
