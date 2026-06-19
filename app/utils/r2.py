@@ -43,6 +43,18 @@ def presign_put(file_key: str, content_type: str) -> str:
     )
 
 
+def presign_get(file_key: str) -> str:
+    """Presigned GET URL for reading a private object (e.g. rendering an avatar)."""
+    return _client().generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": settings.R2_BUCKET,
+            "Key": file_key,
+        },
+        ExpiresIn=settings.R2_PRESIGN_EXPIRE_SECONDS,
+    )
+
+
 def delete_object(file_key: str) -> None:
     """Delete an object; deleting a nonexistent key is a no-op in S3/R2."""
     _client().delete_object(Bucket=settings.R2_BUCKET, Key=file_key)

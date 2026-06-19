@@ -22,6 +22,7 @@ class User(Base):
     phone = Column(Text, unique=True)
     password_hash = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
+    avatar_key = Column(Text, nullable=True)
     role = Column(Text, nullable=False)
     email_verified = Column(Boolean, nullable=False, server_default="false")
     status = Column(Text, nullable=False, server_default="ACTIVE")
