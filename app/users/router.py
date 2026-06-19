@@ -33,7 +33,11 @@ def update_current_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    before = {"full_name": current_user.full_name, "phone": current_user.phone}
+    before = {
+        "full_name": current_user.full_name,
+        "phone": current_user.phone,
+        "bio": current_user.bio,
+    }
     user = update_user_profile(db, body, current_user)
     append_audit(
         db,
@@ -42,7 +46,7 @@ def update_current_user(
         action="PROFILE_UPDATED",
         actor_id=user.id,
         before_state=before,
-        after_state={"full_name": user.full_name, "phone": user.phone},
+        after_state={"full_name": user.full_name, "phone": user.phone, "bio": user.bio},
         ip_address=request.client.host if request.client else None,
     )
     db.commit()

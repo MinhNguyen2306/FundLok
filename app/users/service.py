@@ -33,9 +33,12 @@ def user_me_payload(user: User) -> dict:
         "email": user.email,
         "full_name": user.full_name,
         "role": user.role,
+        "phone": user.phone,
         "status": user.status,
         "email_verified": user.email_verified,
+        "bio": user.bio,
         "avatar_url": build_avatar_url(user),
+        "created_at": user.created_at.isoformat() if user.created_at else None,
     }
 
 
@@ -58,6 +61,9 @@ def update_user_profile(db: Session, body: UserUpdateRequest, current_user: User
 
     if "full_name" in data:
         current_user.full_name = data["full_name"]
+
+    if "bio" in data:
+        current_user.bio = data["bio"]
 
     db.add(current_user)
     db.flush()
