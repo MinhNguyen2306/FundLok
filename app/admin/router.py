@@ -4,15 +4,37 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.admin.schemas import AuditLogOut
+from app.admin import service
+from app.admin.schemas import AdminMode, AdminOverview, AuditLogOut
 from app.core.database import get_db
-from app.lending.models import AuditLog
 from app.users.models import Role, User
 from app.utils.rbac import require_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 require_admin = require_roles(Role.ADMIN)
+
+
+@router.get("/overview", response_model=AdminOverview)
+def get_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+    mode: AdminMode = Query(default=AdminMode.users),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=14, ge=1, le=100),
+    search: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+):
+    return service.get_overview(
+        db,
+        mode=mode,
+        page=page,
+        page_size=page_size,
+        search=search,
+        status=status,
+        role=role,
+    )
 
 
 @router.get("/audit-logs", response_model=list[AuditLogOut])
@@ -26,15 +48,12 @@ def get_audit_logs(
     created_before: datetime | None = Query(default=None),
     limit: int = Query(default=100, le=500),
 ):
-    q = db.query(AuditLog).order_by(AuditLog.created_at.desc())
-    if entity_type:
-        q = q.filter(AuditLog.entity_type == entity_type)
-    if entity_id:
-        q = q.filter(AuditLog.entity_id == entity_id)
-    if actor_id:
-        q = q.filter(AuditLog.actor_id == actor_id)
-    if created_after:
-        q = q.filter(AuditLog.created_at >= created_after)
-    if created_before:
-        q = q.filter(AuditLog.created_at <= created_before)
-    return q.limit(limit).all()
+    return service.list_audit_logs(
+        db,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor_id=actor_id,
+        created_after=created_after,
+        created_before=created_before,
+        limit=limit,
+    )

@@ -1,8 +1,67 @@
 from datetime import datetime
-from typing import Any
+from enum import Enum
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel
+
+T = TypeVar("T")
+
+
+class AdminMode(str, Enum):
+    """Which table the overview screen should load alongside the stats."""
+
+    users = "users"
+    projects = "projects"
+
+
+class Page(BaseModel, Generic[T]):
+    """Generic paginated envelope shared by every admin list endpoint."""
+
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class AdminStats(BaseModel):
+    total_users: int
+    total_projects: int
+    users_by_role: dict[str, int]
+    users_by_status: dict[str, int]
+    projects_by_status: dict[str, int]
+
+
+class UserRow(BaseModel):
+    id: UUID
+    email: str
+    full_name: str | None
+    role: str
+    status: str
+    email_verified: bool
+    created_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class ProjectRow(BaseModel):
+    id: UUID
+    legal_name: str
+    tax_id: str | None
+    industry: str | None
+    status: str
+    created_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminOverview(BaseModel):
+    """BFF payload: the whole admin overview screen in one response."""
+
+    stats: AdminStats
+    mode: AdminMode
+    table: Page[UserRow] | Page[ProjectRow]
 
 
 class AuditLogOut(BaseModel):
