@@ -24,7 +24,8 @@ def get_overview(
     page_size: int = Query(default=14, ge=1, le=100),
     search: str | None = Query(default=None),
     status: str | None = Query(default=None),
-    role: str | None = Query(default=None),
+    role: str | None = Query(default=None, description="users mode only"),
+    industry: str | None = Query(default=None, description="projects mode only"),
 ):
     return service.get_overview(
         db,
@@ -34,6 +35,7 @@ def get_overview(
         search=search,
         status=status,
         role=role,
+        industry=industry,
     )
 
 

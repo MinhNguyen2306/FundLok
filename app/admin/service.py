@@ -78,6 +78,7 @@ def list_projects(
     page_size: int = 14,
     search: str | None = None,
     status: str | None = None,
+    industry: str | None = None,
 ) -> Page:
     q = db.query(Project)
     if search:
@@ -85,6 +86,8 @@ def list_projects(
         q = q.filter(or_(Project.legal_name.ilike(like), Project.industry.ilike(like)))
     if status:
         q = q.filter(Project.status == status)
+    if industry:
+        q = q.filter(Project.industry.ilike(industry))
     return _paginate(q, page=page, page_size=page_size, row_model=ProjectRow, order_col=Project.created_at)
 
 
@@ -97,11 +100,14 @@ def get_overview(
     search: str | None = None,
     status: str | None = None,
     role: str | None = None,
+    industry: str | None = None,
 ) -> AdminOverview:
     """One-shot BFF payload: stats + whichever table the frontend asked for."""
     stats = get_stats(db)
     if mode == AdminMode.projects:
-        table = list_projects(db, page=page, page_size=page_size, search=search, status=status)
+        table = list_projects(
+            db, page=page, page_size=page_size, search=search, status=status, industry=industry
+        )
     else:
         table = list_users(
             db, page=page, page_size=page_size, search=search, status=status, role=role
