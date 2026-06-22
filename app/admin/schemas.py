@@ -64,12 +64,24 @@ class AdminOverview(BaseModel):
     table: Page[UserRow] | Page[ProjectRow]
 
 
+class ActorOut(BaseModel):
+    """Minimal user info attached to an audit log (actor / USER entity)."""
+
+    id: UUID
+    full_name: str | None
+    email: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class AuditLogOut(BaseModel):
     id: UUID
     entity_type: str
     entity_id: UUID | None
     action: str
     actor_id: UUID | None
+    actor: ActorOut | None = None
+    entity_user: ActorOut | None = None  # populated only when entity_type == 'USER'
     before_state: dict[str, Any] | None
     after_state: dict[str, Any] | None
     ip_address: str | None

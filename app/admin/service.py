@@ -1,10 +1,19 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Query, Session
+from sqlalchemy import and_, func, or_
+from sqlalchemy.orm import Query, Session, aliased
 
-from app.admin.schemas import AdminMode, AdminOverview, AdminStats, Page, ProjectRow, UserRow
+from app.admin.schemas import (
+    ActorOut,
+    AdminMode,
+    AdminOverview,
+    AdminStats,
+    AuditLogOut,
+    Page,
+    ProjectRow,
+    UserRow,
+)
 from app.lending.models import AuditLog, Project
 from app.users.models import User
 
@@ -124,8 +133,21 @@ def list_audit_logs(
     created_after: datetime | None = None,
     created_before: datetime | None = None,
     limit: int = 100,
-) -> list[AuditLog]:
-    q = db.query(AuditLog).order_by(AuditLog.created_at.desc())
+) -> list[AuditLogOut]:
+    # Resolve the two UUID columns to user info in a single query (no N+1):
+    #   - actor   -> the user who performed the action
+    #   - entity_user -> the subject user, only when entity_type == 'USER'
+    actor = aliased(User)
+    entity_user = aliased(User)
+    q = (
+        db.query(AuditLog, actor, entity_user)
+        .outerjoin(actor, actor.id == AuditLog.actor_id)
+        .outerjoin(
+            entity_user,
+            and_(entity_user.id == AuditLog.entity_id, AuditLog.entity_type == "USER"),
+        )
+        .order_by(AuditLog.created_at.desc())
+    )
     if entity_type:
         q = q.filter(AuditLog.entity_type == entity_type)
     if entity_id:
@@ -136,4 +158,12 @@ def list_audit_logs(
         q = q.filter(AuditLog.created_at >= created_after)
     if created_before:
         q = q.filter(AuditLog.created_at <= created_before)
-    return q.limit(limit).all()
+
+    rows = q.limit(limit).all()
+    result = []
+    for log, actor_row, entity_user_row in rows:
+        out = AuditLogOut.model_validate(log)
+        out.actor = ActorOut.model_validate(actor_row) if actor_row else None
+        out.entity_user = ActorOut.model_validate(entity_user_row) if entity_user_row else None
+        result.append(out)
+    return result
