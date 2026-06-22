@@ -12,6 +12,7 @@ class Role(str, PyEnum):
     SME = "SME"
     INVESTOR = "INVESTOR"
     ADMIN = "ADMIN"
+    SYSTEM_ADMIN = "SYSTEM_ADMIN"
 
 
 class User(Base):

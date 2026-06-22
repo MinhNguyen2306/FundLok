@@ -12,7 +12,7 @@ from app.utils.rbac import require_roles
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-require_admin = require_roles(Role.ADMIN)
+require_admin = require_roles(Role.ADMIN, Role.SYSTEM_ADMIN)
 
 
 @router.get("/overview", response_model=AdminOverview)

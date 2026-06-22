@@ -3,11 +3,14 @@ import app.models  # noqa: F401 — register ORM mappers before routes
 import os
 import uvicorn
 
-from fastapi import FastAPI, Depends, BackgroundTasks
+from fastapi import FastAPI, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware # Added for CORS support
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.admin.router import router as admin_router
+from app.system.service import is_maintenance_active
+from app.system.router import router as system_router
 from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
 from app.core.database import get_db
@@ -28,6 +31,37 @@ app = FastAPI(
     description="MVP backend for FundLok fintech platform",
     version="0.1.0",
 )
+
+
+# ================= MAINTENANCE MODE =================
+# When maintenance is enabled, normal traffic gets a 503. Auth and admin
+# routes stay open so a (system) admin can log in and turn it back off.
+# Registered BEFORE CORS so CORS stays outermost and the 503 keeps its
+# Access-Control headers (otherwise the browser can't read the response).
+MAINTENANCE_ALLOW_PREFIXES = (
+    "/auth",
+    "/admin",
+    "/system",  # public maintenance-status read must stay reachable
+    "/health",
+    "/test-db",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+)
+
+
+@app.middleware("http")
+async def maintenance_gate(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path.startswith(MAINTENANCE_ALLOW_PREFIXES):
+        return await call_next(request)
+    enabled, message = is_maintenance_active()
+    if enabled:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": message or "The service is temporarily down for maintenance."},
+        )
+    return await call_next(request)
+# =====================================================
 
 
 # ================= CORS CONFIGURATION =================
@@ -71,6 +105,7 @@ app.include_router(contracts_router)
 app.include_router(market_router)
 app.include_router(payments_router)
 app.include_router(admin_router)
+app.include_router(system_router)
 app.include_router(contact_router)
 
 if __name__ == "__main__":

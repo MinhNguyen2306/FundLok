@@ -15,3 +15,4 @@ from app.lending.models import (  # noqa: F401
     ProjectOwnership,
     ScoreRun,
 )
+from app.system.models import SystemSetting  # noqa: F401
