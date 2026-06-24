@@ -24,6 +24,23 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+# Roles a user may assign to themselves after registration. Privileged roles
+# (ADMIN / SYSTEM_ADMIN) are provisioned out-of-band and are never selectable here.
+SELECTABLE_ROLES = (Role.SME, Role.INVESTOR)
+
+
+class RoleSelectRequest(BaseModel):
+    """One-time, post-registration role selection."""
+    role: Role
+
+    @field_validator("role")
+    @classmethod
+    def validate_selectable_role(cls, v: Role) -> Role:
+        if v not in SELECTABLE_ROLES:
+            raise ValueError("role must be SME or INVESTOR")
+        return v
+
+
 # --- Avatar upload (presign -> client PUT -> confirm), stored under user/ in the bucket ---
 
 AVATAR_MAX_SIZE = 5 * 1024 * 1024  # 5 MB

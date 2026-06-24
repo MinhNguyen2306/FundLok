@@ -7,11 +7,13 @@ from app.users.schemas import (
     AvatarConfirmRequest,
     AvatarPresignRequest,
     AvatarPresignResponse,
+    RoleSelectRequest,
     UserUpdateRequest,
 )
 from app.users.service import (
     confirm_avatar,
     create_avatar_presign,
+    select_user_role,
     update_user_profile,
     user_me_payload,
 )
@@ -47,6 +49,29 @@ def update_current_user(
         actor_id=user.id,
         before_state=before,
         after_state={"full_name": user.full_name, "phone": user.phone, "bio": user.bio},
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return user_me_payload(user)
+
+
+@router.patch("/me/role")
+def select_role(
+    body: RoleSelectRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    before = {"role": current_user.role}
+    user = select_user_role(db, body.role, current_user)
+    append_audit(
+        db,
+        entity_type="USER",
+        entity_id=user.id,
+        action="ROLE_SELECTED",
+        actor_id=user.id,
+        before_state=before,
+        after_state={"role": user.role},
         ip_address=request.client.host if request.client else None,
     )
     db.commit()

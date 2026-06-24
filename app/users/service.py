@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.users.models import User
+from app.users.models import Role, User
 from app.users.schemas import (
     AVATAR_CONTENT_TYPE_EXTENSIONS,
     AVATAR_MAX_SIZE,
@@ -65,6 +65,20 @@ def update_user_profile(db: Session, body: UserUpdateRequest, current_user: User
     if "bio" in data:
         current_user.bio = data["bio"]
 
+    db.add(current_user)
+    db.flush()
+    return current_user
+
+
+def select_user_role(db: Session, role: Role, current_user: User) -> User:
+    # One-time selection: once a role is set it can't be changed here, which
+    # prevents a user from later switching into a different role on their own.
+    if current_user.role:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Role has already been set",
+        )
+    current_user.role = role.value
     db.add(current_user)
     db.flush()
     return current_user

@@ -25,7 +25,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     avatar_key = Column(Text, nullable=True)
     bio = Column(Text, nullable=True)
-    role = Column(Text, nullable=False)
+    role = Column(Text, nullable=True)  # null until the user selects a role post-registration
     email_verified = Column(Boolean, nullable=False, server_default="false")
     status = Column(Text, nullable=False, server_default="ACTIVE")
     created_at = Column(DateTime(timezone=True), server_default=func.now())

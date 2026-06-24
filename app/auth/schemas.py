@@ -4,18 +4,18 @@ from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
 
 
-ALLOWED_ROLES = frozenset({"SME", "INVESTOR", "ADMIN"})
 PHONE_NUMBER_PATTERN = re.compile(
     r"^(?:\+84|84|0)(?:3|5|7|8|9)\d{8}$|^\+?[1-9]\d{7,14}$"
 )
 
 
 class UserCreate(BaseModel):
+    # Role is intentionally NOT chosen at registration. New users are created
+    # without a role and pick one later via PUT /users/me/role.
     email: EmailStr
     phone: str | None = None
     full_name: str
     password: str
-    role: str
     turnstile_token: str | None = None
 
     @field_validator("phone", mode="before")
@@ -42,19 +42,12 @@ class UserCreate(BaseModel):
             raise ValueError("Password too long for bcrypt")
         return v
 
-    @field_validator("role")
-    @classmethod
-    def normalize_role(cls, v: str) -> str:
-        u = v.strip().upper()
-        if u not in ALLOWED_ROLES:
-            raise ValueError("role must be SME, INVESTOR, or ADMIN")
-        return u
-
 
 class UserOut(BaseModel):
     id: UUID
     email: EmailStr
-    role: str
+    # None until the user selects a role after registration.
+    role: str | None = None
     status: str
 
     model_config = {"from_attributes": True}

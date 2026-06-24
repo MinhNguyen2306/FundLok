@@ -54,6 +54,29 @@ def _die(msg: str, resp: httpx.Response | None = None) -> None:
     raise SystemExit(1)
 
 
+def set_user_role(email: str, role: str) -> None:
+    """Directly set a user's role in the DB.
+
+    Used for ADMIN, which is provisioned out-of-band and can no longer be
+    chosen through the public PUT /users/me/role endpoint.
+    """
+    import app.models  # noqa: F401 — register ORM mappers
+
+    from app.core.database import SessionLocal
+    from app.users.models import User
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            raise RuntimeError(f"User {email} not found when setting role {role}")
+        user.role = role
+        db.add(user)
+        db.commit()
+    finally:
+        db.close()
+
+
 def approve_kyc_documents(project_id: uuid.UUID) -> None:
     """Set KYC_ID / KYC_ADDRESS / KYC_BUSINESS_REG docs to APPROVED for listing."""
     import app.models  # noqa: F401 — register ORM mappers
@@ -123,6 +146,8 @@ def main() -> None:
         j(client.get("/test-db"))
 
         # --- Register (before any login) ---
+        # Role is no longer chosen at registration; users pick one afterwards
+        # via PUT /users/me/role (SME/INVESTOR) or are provisioned (ADMIN).
         print("\n3. POST /auth/register (SME)")
         j(
             client.post(
@@ -131,7 +156,6 @@ def main() -> None:
                     "email": sme_email,
                     "password": password,
                     "full_name": "Test SME Owner",
-                    "role": "SME",
                 },
             )
         )
@@ -144,7 +168,6 @@ def main() -> None:
                     "email": investor_email,
                     "password": password,
                     "full_name": "Test Investor",
-                    "role": "INVESTOR",
                 },
             )
         )
@@ -157,7 +180,6 @@ def main() -> None:
                     "email": admin_email,
                     "password": password,
                     "full_name": "Test Admin",
-                    "role": "ADMIN",
                 },
             )
         )
@@ -180,6 +202,17 @@ def main() -> None:
             client.post("/auth/login", json={"email": admin_email, "password": password})
         )
         admin_auth = {"Authorization": f"Bearer {admin_tokens['access_token']}"}
+
+        # --- Select role (post-registration) ---
+        print("\n8a. PUT /users/me/role (SME)")
+        j(client.put("/users/me/role", json={"role": "SME"}, headers=sme_auth))
+
+        print("\n8b. PUT /users/me/role (INVESTOR)")
+        j(client.put("/users/me/role", json={"role": "INVESTOR"}, headers=investor_auth))
+
+        # ADMIN is provisioned out-of-band (not self-selectable).
+        print("\n8c. Provision ADMIN role in DB")
+        set_user_role(admin_email, "ADMIN")
 
         print("\n9. POST /auth/refresh")
         refreshed = j(

@@ -116,7 +116,7 @@ def register_user(db: Session, user_in: UserCreate, background_tasks: Background
         phone=user_in.phone,
         full_name=user_in.full_name,
         password_hash=hash_password(user_in.password),
-        role=user_in.role,
+        role=None,  # chosen later via PUT /users/me/role
         status="ACTIVE",
         email_verified=False,
     )
