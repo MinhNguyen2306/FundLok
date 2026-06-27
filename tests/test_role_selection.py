@@ -124,7 +124,7 @@ def make_client():
 @pytest.mark.parametrize("role", ["SME", "INVESTOR"])
 def test_put_role_accepts_selectable(make_client, role):
     client, db = make_client(_user(role=None))
-    resp = client.put("/users/me/role", json={"role": role})
+    resp = client.patch("/users/me/role", json={"role": role})
     assert resp.status_code == 200
     assert resp.json()["role"] == role
     assert db.committed is True
@@ -133,14 +133,14 @@ def test_put_role_accepts_selectable(make_client, role):
 @pytest.mark.parametrize("role", ["ADMIN", "SYSTEM_ADMIN", "FOO", "sme", ""])
 def test_put_role_rejects_everything_else(make_client, role):
     client, db = make_client(_user(role=None))
-    resp = client.put("/users/me/role", json={"role": role})
+    resp = client.patch("/users/me/role", json={"role": role})
     assert resp.status_code == 422
     assert db.committed is False
 
 
 def test_put_role_conflict_when_already_set(make_client):
     client, _ = make_client(_user(role="SME"))
-    resp = client.put("/users/me/role", json={"role": "INVESTOR"})
+    resp = client.patch("/users/me/role", json={"role": "INVESTOR"})
     assert resp.status_code == 409
 
 
@@ -149,7 +149,7 @@ def test_put_role_requires_authentication():
     app.dependency_overrides[get_db] = lambda: _FakeDB()
     try:
         client = TestClient(app)
-        resp = client.put("/users/me/role", json={"role": "SME"})
+        resp = client.patch("/users/me/role", json={"role": "SME"})
         assert resp.status_code in (401, 403)
     finally:
         app.dependency_overrides.clear()

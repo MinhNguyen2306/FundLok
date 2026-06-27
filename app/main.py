@@ -15,6 +15,7 @@ from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
 from app.core.database import get_db
 from app.files.router import router as files_router
+from app.kyc.router import router as kyc_router
 from app.loans.router import router as loans_router
 from app.market.router import router as market_router
 from app.oauth.router import router as oauth_router
@@ -42,6 +43,7 @@ MAINTENANCE_ALLOW_PREFIXES = (
     "/auth",
     "/admin",
     "/system",  # public maintenance-status read must stay reachable
+    "/kyc/webhook",  # Didit verification callbacks must keep arriving
     "/health",
     "/test-db",
     "/docs",
@@ -98,6 +100,7 @@ app.include_router(users_router)
 app.include_router(projects_router)
 app.include_router(sme_router)
 app.include_router(files_router)
+app.include_router(kyc_router)
 app.include_router(loans_router)
 app.include_router(underwriting_router)
 app.include_router(uploads_router)

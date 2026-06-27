@@ -16,3 +16,4 @@ from app.lending.models import (  # noqa: F401
     ScoreRun,
 )
 from app.system.models import SystemSetting  # noqa: F401
+from app.kyc.models import KycVerification, KycWebhookEvent  # noqa: F401
