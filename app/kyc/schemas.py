@@ -5,6 +5,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 
+class KycStartRequest(BaseModel):
+    """Optional body for POST /kyc/start.
+
+    `language` is the end user's locale from the frontend (e.g. "vi", "vi-VN",
+    "en"). It is normalized to ISO 639-1 server-side; if omitted, the
+    DIDIT_LANGUAGE default is used.
+    """
+
+    language: str | None = None
+
+
 class KycStartResponse(BaseModel):
     """Returned when a verification session is created (or reused)."""
 

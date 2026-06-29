@@ -34,6 +34,17 @@ def _callback_url() -> str | None:
     return None
 
 
+def _normalize_language(value: str | None) -> str | None:
+    """Reduce a frontend locale to an ISO 639-1 code Didit accepts.
+
+    "vi" -> "vi", "vi-VN" -> "vi", "en_US" -> "en". Returns None if empty.
+    """
+    if not value:
+        return None
+    code = value.replace("_", "-").split("-")[0].strip().lower()
+    return code or None
+
+
 def _latest_for_user(db: Session, user_id) -> KycVerification | None:
     return (
         db.query(KycVerification)
@@ -43,22 +54,29 @@ def _latest_for_user(db: Session, user_id) -> KycVerification | None:
     )
 
 
-def start_verification(db: Session, user: User) -> KycVerification:
+def start_verification(
+    db: Session, user: User, language: str | None = None
+) -> KycVerification:
     """Create (or reuse) a Didit KYC session for the given user.
 
     If the user already has a non-terminal verification we return it instead
     of creating a duplicate — this mirrors Didit's own vendor_data idempotency.
+
+    `language` is the caller's preferred locale (e.g. from the frontend); it
+    falls back to the DIDIT_LANGUAGE env default when not provided.
     """
     existing = _latest_for_user(db, user.id)
     if existing is not None and not existing.is_terminal:
         return existing
 
+    lang = _normalize_language(language) or _normalize_language(settings.DIDIT_LANGUAGE)
     contact = {"email": user.email} if user.email else None
     data = client.create_session(
         vendor_data=str(user.id),
         callback=_callback_url(),
         metadata={"user_id": str(user.id)},
         contact_details=contact,
+        language=lang,
     )
 
     verification = KycVerification(

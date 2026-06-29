@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.kyc import service
 from app.kyc.client import DiditError
-from app.kyc.schemas import KycStartResponse, KycStatusResponse
+from app.kyc.schemas import KycStartRequest, KycStartResponse, KycStatusResponse
 from app.users.models import User
 from app.utils.audit import append_audit
 from app.utils.jwt import get_current_user
@@ -27,12 +27,19 @@ def _to_status(v) -> KycStatusResponse:
 @router.post("/start", response_model=KycStartResponse, status_code=201)
 def start_kyc(
     request: Request,
+    body: KycStartRequest | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create (or reuse) a Didit KYC session and return the hosted verification URL."""
+    """Create (or reuse) a Didit KYC session and return the hosted verification URL.
+
+    Optional body: `{"language": "vi"}` — the user's locale from the frontend.
+    Falls back to the DIDIT_LANGUAGE env default when omitted.
+    """
     try:
-        verification = service.start_verification(db, current_user)
+        verification = service.start_verification(
+            db, current_user, language=body.language if body else None
+        )
     except DiditError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 

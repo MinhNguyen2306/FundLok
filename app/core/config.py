@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     DIDIT_WEBHOOK_SECRET_KEY: str | None = None
     DIDIT_BASE_URL: str = "https://verification.didit.me"
     DIDIT_CALLBACK_URL: str | None = None  # FE return URL; defaults to FRONTEND_URL/kyc/callback
+    DIDIT_LANGUAGE: str = "vi"  # ISO 639-1 UI language for the hosted flow (Vietnamese)
 
 
 

@@ -58,7 +58,17 @@ If the user already has an **unfinished** verification, the same session is retu
 (no duplicate) — so it's safe to call this every time the user lands on the KYC screen.
 
 - **Auth:** required.
-- **Body:** none.
+- **Body:** optional. Send the user's locale so the Didit flow renders in their
+  language:
+
+  ```json
+  { "language": "vi" }
+  ```
+
+  Accepts `vi`, `vi-VN`, `en`, `en_US`, etc. — it's normalized to ISO 639-1
+  server-side. Omit it to use the backend default (`DIDIT_LANGUAGE`, currently
+  Vietnamese). The language only applies when a **new** session is created;
+  reused unfinished sessions keep their original language.
 - **Response `201`:**
 
   ```json
@@ -66,7 +76,7 @@ If the user already has an **unfinished** verification, the same session is retu
     "verification_id": "1f0e8c2a-...",
     "session_id": "4c5c7f3a-...",
     "status": "Not Started",
-    "verification_url": "https://verify.didit.me/session/3FaJ9wLqX2Mz"
+    "verification_url": "https://verify.didit.me/vi/session/3FaJ9wLqX2Mz"
   }
   ```
 
@@ -161,10 +171,11 @@ creates a fresh session.
 ```ts
 const API = import.meta.env.VITE_API_URL; // your backend base URL
 
-async function startKyc(token: string) {
+async function startKyc(token: string, locale: string) {
   const res = await fetch(`${API}/kyc/start`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ language: locale }), // e.g. "vi" or "vi-VN" from your i18n
   });
   if (!res.ok) throw new Error("Could not start verification");
   const { verification_url } = await res.json();
