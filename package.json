@@ -1,0 +1,25 @@
+{
+  "name": "fundlok-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Task shortcuts for the FundLok FastAPI backend. Run with `bun run <script>`.",
+  "scripts": {
+    "setup": "python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r requirements.txt",
+    "up": "docker compose up -d postgres mailpit minio",
+    "down": "docker compose down",
+    "stop": "docker compose stop",
+    "logs": "docker compose logs -f",
+    "dev": "docker compose up -d postgres mailpit minio && ./venv/bin/uvicorn app.main:app --reload --port 8000",
+    "start": "docker compose up -d postgres mailpit minio && ./venv/bin/alembic upgrade head && ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "migrate": "./venv/bin/alembic upgrade head",
+    "migrate:new": "./venv/bin/alembic revision --autogenerate -m",
+    "seed": "docker compose exec -T postgres psql -U fundlok -d fundlok_dev -v ON_ERROR_STOP=1 < scripts/seed_data.sql",
+    "reset": "./scripts/reset_db.sh",
+    "psql": "docker compose exec postgres psql -U fundlok -d fundlok_dev",
+    "test": "./venv/bin/pytest -q",
+    "docker:build": "docker compose build api",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f api"
+  }
+}

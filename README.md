@@ -27,6 +27,46 @@ API backend for the FundLok fintech platform. The app uses FastAPI, SQLAlchemy, 
 - Python 3.11+
 - Docker Desktop or Docker Engine with Compose
 - Git
+- [Bun](https://bun.sh) (optional) — for the `bun run` task shortcuts below
+
+## Task scripts (Bun)
+
+Common tasks are wrapped as `package.json` scripts. Run them with `bun run <script>`.
+First-time setup: `bun run setup` (creates `venv` and installs dependencies), then
+copy `.env.example` to `.env`.
+
+The fast path for daily work:
+
+```bash
+bun run dev      # start Postgres/Mailpit/MinIO, then uvicorn --reload on :8000
+```
+
+| Command | What it does |
+| --- | --- |
+| `bun run setup` | Create `venv` and `pip install -r requirements.txt` |
+| `bun run dev` | Start infra containers, then `uvicorn --reload` on **:8000** |
+| `bun run start` | Start infra + `alembic upgrade head` + uvicorn on **:8000** (no reload) |
+| `bun run reset` | Drop + recreate the local DB → migrate → seed (login password `Password123!`) |
+| `bun run migrate` | `alembic upgrade head` |
+| `bun run migrate:new "message"` | Autogenerate a new migration |
+| `bun run seed` | Load `scripts/seed_data.sql` into the local DB |
+| `bun run psql` | Open a `psql` shell to `fundlok_dev` |
+| `bun run test` | Run `pytest -q` |
+| `bun run up` / `down` / `stop` / `logs` | Manage the infra containers (Postgres, Mailpit, MinIO) |
+
+Full-container run (builds the image and runs the API in Docker too, prod-like):
+
+| Command | What it does |
+| --- | --- |
+| `bun run docker:up` | `docker compose up -d --build` — builds and runs **api + infra** (api on :8000; migrations run on boot) |
+| `bun run docker:build` | Build just the api image |
+| `bun run docker:down` | Stop everything |
+| `bun run docker:logs` | Tail the api container logs |
+
+Prefer `bun run dev` for day-to-day work (hot reload, runs on the host so `localhost`
+reaches every container). Use `bun run docker:up` for a prod-like containerized run.
+
+The manual, step-by-step equivalents are documented below.
 
 ### 1. Clone the repository
 
@@ -177,9 +217,10 @@ For Cloud Run, set `DATABASE_URL` and `SECRET_KEY` in the service environment va
 FundLok/
 ├─ alembic/                     # Database migrations
 ├─ app/                         # Main application code
-├─ docker/                      # Local Docker init scripts
-├─ scripts/                     # SQL helpers and smoke tests
-├─ docker-compose.yml           # Local PostgreSQL service
+├─ docker/                      # Local Docker init scripts + container entrypoint
+├─ scripts/                     # SQL helpers, smoke tests, reset_db.sh, seed_data.sql
+├─ docker-compose.yml           # Local Postgres/Mailpit/MinIO + api service
+├─ package.json                 # `bun run` task shortcuts
 ├─ main.py                      # Root entry point
 ├─ README.md
 └─ requirements.txt

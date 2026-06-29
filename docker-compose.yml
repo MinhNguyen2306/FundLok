@@ -38,6 +38,27 @@ services:
     volumes:
       - minio_data:/data
 
+  # Full-container run of the API (used by `bun run docker:up`). For day-to-day
+  # dev prefer `bun run dev` (uvicorn on the host with hot reload). The
+  # entrypoint runs `alembic upgrade head` before starting uvicorn.
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8080"
+    env_file:
+      - .env
+    environment:
+      # Override .env values that point at host "localhost" so they resolve on
+      # the compose network instead.
+      DATABASE_URL: postgresql+psycopg2://fundlok:fundlok@postgres:5432/fundlok_dev
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   minio_data:
