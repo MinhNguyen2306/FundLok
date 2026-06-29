@@ -5,8 +5,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 
-class KycStartRequest(BaseModel):
-    """Optional body for POST /kyc/start.
+class StartRequest(BaseModel):
+    """Optional body for POST /{kyc,kyb}/start.
 
     `language` is the end user's locale from the frontend (e.g. "vi", "vi-VN",
     "en"). It is normalized to ISO 639-1 server-side; if omitted, the
@@ -16,7 +16,7 @@ class KycStartRequest(BaseModel):
     language: str | None = None
 
 
-class KycStartResponse(BaseModel):
+class StartResponse(BaseModel):
     """Returned when a verification session is created (or reused)."""
 
     verification_id: UUID
@@ -25,12 +25,13 @@ class KycStartResponse(BaseModel):
     verification_url: str | None = None
 
 
-class KycStatusResponse(BaseModel):
+class StatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     verification_id: UUID
     session_id: str
     status: str
+    verification_type: str
     is_terminal: bool
     is_approved: bool
     verification_url: str | None = None

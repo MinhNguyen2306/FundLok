@@ -4,6 +4,8 @@ Docs: https://docs.didit.me/sessions-api/overview
 
 The verification API authenticates with a long-lived secret on the
 ``x-api-key`` header (NOT OAuth bearer). Calls must originate server-side.
+Both KYC (individual) and KYB (business) flows use this same client; they
+differ only by the ``workflow_id`` passed to ``create_session``.
 """
 from __future__ import annotations
 
@@ -34,6 +36,7 @@ def _headers() -> dict[str, str]:
 
 def create_session(
     *,
+    workflow_id: str | None,
     vendor_data: str,
     callback: str | None = None,
     metadata: dict[str, Any] | None = None,
@@ -42,15 +45,15 @@ def create_session(
 ) -> dict[str, Any]:
     """POST /v3/session/ — create a verification session.
 
-    ``vendor_data`` is our stable per-user identifier; Didit uses it for
-    duplicate detection (the same value returns an existing unfinished
-    session instead of creating a new one).
+    ``workflow_id`` selects the Didit flow (KYC vs KYB). ``vendor_data`` is our
+    stable per-user identifier; Didit uses it for duplicate detection (the same
+    value returns an existing unfinished session instead of creating a new one).
     """
-    if not settings.DIDIT_WORKFLOW_ID:
-        raise DiditError("DIDIT_WORKFLOW_ID is not configured")
+    if not workflow_id:
+        raise DiditError("Didit workflow_id is not configured")
 
     payload: dict[str, Any] = {
-        "workflow_id": settings.DIDIT_WORKFLOW_ID,
+        "workflow_id": workflow_id,
         "vendor_data": vendor_data,
     }
     if callback:

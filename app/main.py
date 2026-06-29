@@ -15,7 +15,6 @@ from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
 from app.core.database import get_db
 from app.files.router import router as files_router
-from app.kyc.router import router as kyc_router
 from app.loans.router import router as loans_router
 from app.market.router import router as market_router
 from app.oauth.router import router as oauth_router
@@ -25,6 +24,7 @@ from app.sme.router import router as sme_router
 from app.underwriting.router import router as underwriting_router
 from app.uploads.router import router as uploads_router
 from app.users.router import router as users_router
+from app.verification.router import kyb_router, kyc_router
 from app.contact.router import router as contact_router
 
 app = FastAPI(
@@ -101,6 +101,7 @@ app.include_router(projects_router)
 app.include_router(sme_router)
 app.include_router(files_router)
 app.include_router(kyc_router)
+app.include_router(kyb_router)
 app.include_router(loans_router)
 app.include_router(underwriting_router)
 app.include_router(uploads_router)

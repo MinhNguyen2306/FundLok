@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     # Didit KYC / identity verification (https://docs.didit.me)
     # The verification API authenticates with a static secret on x-api-key.
     DIDIT_API_KEY: str | None = None
-    DIDIT_WORKFLOW_ID: str | None = None  # KYC workflow UUID ("Free KYC"), passed per session
+    DIDIT_WORKFLOW_ID: str | None = None  # KYC workflow UUID (investors), passed per session
+    DIDIT_KYB_WORKFLOW_ID: str | None = None  # KYB workflow UUID (SMEs / business verification)
     # Webhook destination secret_shared_key (X-Signature-V2 HMAC). Accepts the
     # legacy DIDIT_WEBHOOK_SECRET_KEY name as a fallback alias.
     DIDIT_WEBHOOK_SECRET: str | None = None

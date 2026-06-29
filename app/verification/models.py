@@ -13,11 +13,16 @@ from app.core.database import Base
 # compatible if Didit adds states, and derive "terminal" / "approved" in code.
 TERMINAL_STATUSES = {"Approved", "Declined", "Expired", "Abandoned", "Kyc Expired"}
 
+# Which Didit flow a verification belongs to: KYC (individual identity, investors)
+# or KYB (business verification, SMEs). Both share this table and the Sessions-API
+# plumbing, and differ only by the workflow id sent to Didit.
+VERIFICATION_TYPES = ("KYC", "KYB")
 
-class KycVerification(Base):
-    """One Didit verification session tied to a FundLok user."""
 
-    __tablename__ = "kyc_verifications"
+class Verification(Base):
+    """One Didit verification session tied to a FundLok user (KYC or KYB)."""
+
+    __tablename__ = "verifications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(
@@ -26,6 +31,8 @@ class KycVerification(Base):
         nullable=False,
         index=True,
     )
+    # "KYC" (investors) or "KYB" (SMEs). Defaults to KYC for backward compatibility.
+    verification_type = Column(Text, nullable=False, server_default="KYC", index=True)
     # Didit session identifiers / artifacts.
     session_id = Column(Text, nullable=False, unique=True, index=True)
     session_number = Column(Integer, nullable=True)
@@ -50,10 +57,10 @@ class KycVerification(Base):
         return self.status == "Approved"
 
 
-class KycWebhookEvent(Base):
+class VerificationWebhookEvent(Base):
     """Dedupe ledger for Didit webhook deliveries (idempotency on event_id)."""
 
-    __tablename__ = "kyc_webhook_events"
+    __tablename__ = "verification_webhook_events"
 
     event_id = Column(Text, primary_key=True)
     session_id = Column(Text, nullable=True, index=True)

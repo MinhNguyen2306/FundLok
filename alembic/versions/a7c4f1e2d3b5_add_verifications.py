@@ -1,4 +1,4 @@
-"""add kyc_verifications table (Didit KYC integration)
+"""add verifications tables (Didit KYC/KYB integration)
 
 Revision ID: a7c4f1e2d3b5
 Revises: f2b3c4d5e6f7
@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.create_table(
-        "kyc_verifications",
+        "verifications",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
@@ -28,6 +28,13 @@ def upgrade() -> None:
             server_default=sa.text("gen_random_uuid()"),
         ),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        # "KYC" (investors) or "KYB" (SMEs). One table backs both flows.
+        sa.Column(
+            "verification_type",
+            sa.Text(),
+            nullable=False,
+            server_default="KYC",
+        ),
         sa.Column("session_id", sa.Text(), nullable=False),
         sa.Column("session_number", sa.Integer(), nullable=True),
         sa.Column("vendor_data", sa.Text(), nullable=True),
@@ -51,22 +58,23 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
+    op.create_index("ix_verifications_user_id", "verifications", ["user_id"])
     op.create_index(
-        "ix_kyc_verifications_user_id", "kyc_verifications", ["user_id"]
+        "ix_verifications_verification_type", "verifications", ["verification_type"]
     )
     # unique=True matches the model's `Column(..., unique=True, index=True)`,
     # which SQLAlchemy expresses as a single unique index (not a separate
     # UniqueConstraint). Keeps `alembic check` clean.
     op.create_index(
-        "ix_kyc_verifications_session_id",
-        "kyc_verifications",
+        "ix_verifications_session_id",
+        "verifications",
         ["session_id"],
         unique=True,
     )
 
     # Idempotency ledger for Didit webhook deliveries (dedupe on event_id).
     op.create_table(
-        "kyc_webhook_events",
+        "verification_webhook_events",
         sa.Column("event_id", sa.Text(), primary_key=True),
         sa.Column("session_id", sa.Text(), nullable=True),
         sa.Column(
@@ -77,15 +85,19 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_kyc_webhook_events_session_id", "kyc_webhook_events", ["session_id"]
+        "ix_verification_webhook_events_session_id",
+        "verification_webhook_events",
+        ["session_id"],
     )
 
 
 def downgrade() -> None:
     op.drop_index(
-        "ix_kyc_webhook_events_session_id", table_name="kyc_webhook_events"
+        "ix_verification_webhook_events_session_id",
+        table_name="verification_webhook_events",
     )
-    op.drop_table("kyc_webhook_events")
-    op.drop_index("ix_kyc_verifications_session_id", table_name="kyc_verifications")
-    op.drop_index("ix_kyc_verifications_user_id", table_name="kyc_verifications")
-    op.drop_table("kyc_verifications")
+    op.drop_table("verification_webhook_events")
+    op.drop_index("ix_verifications_session_id", table_name="verifications")
+    op.drop_index("ix_verifications_verification_type", table_name="verifications")
+    op.drop_index("ix_verifications_user_id", table_name="verifications")
+    op.drop_table("verifications")

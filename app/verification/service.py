@@ -1,4 +1,8 @@
-"""KYC business logic built on Didit's Sessions API.
+"""Verification business logic built on Didit's Sessions API.
+
+Handles both KYC (individual identity, investors) and KYB (business
+verification, SMEs); the two share this module and one table, and differ only
+by the Didit workflow run and the `verification_type` stored.
 
 Flow (https://docs.didit.me/sessions-api/overview):
   1. start_verification  -> create a Didit session, persist it, hand the URL to the FE
@@ -17,9 +21,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.kyc import client
-from app.kyc.models import KycVerification, KycWebhookEvent
 from app.users.models import User
+from app.verification import client
+from app.verification.models import Verification, VerificationWebhookEvent
 
 # Reject webhooks whose timestamp is more than this many seconds from now
 # (replay-attack defense, per Didit docs).
@@ -45,42 +49,64 @@ def _normalize_language(value: str | None) -> str | None:
     return code or None
 
 
-def _latest_for_user(db: Session, user_id) -> KycVerification | None:
+def _workflow_for(verification_type: str) -> str | None:
+    """Select the Didit workflow id for a verification type (KYC vs KYB)."""
+    if verification_type == "KYB":
+        return settings.DIDIT_KYB_WORKFLOW_ID
+    return settings.DIDIT_WORKFLOW_ID
+
+
+def _latest_for_user(
+    db: Session, user_id, verification_type: str
+) -> Verification | None:
     return (
-        db.query(KycVerification)
-        .filter(KycVerification.user_id == user_id)
-        .order_by(KycVerification.created_at.desc())
+        db.query(Verification)
+        .filter(
+            Verification.user_id == user_id,
+            Verification.verification_type == verification_type,
+        )
+        .order_by(Verification.created_at.desc())
         .first()
     )
 
 
 def start_verification(
-    db: Session, user: User, language: str | None = None
-) -> KycVerification:
-    """Create (or reuse) a Didit KYC session for the given user.
+    db: Session,
+    user: User,
+    *,
+    verification_type: str = "KYC",
+    language: str | None = None,
+) -> Verification:
+    """Create (or reuse) a Didit session of the given type for the user.
 
-    If the user already has a non-terminal verification we return it instead
-    of creating a duplicate — this mirrors Didit's own vendor_data idempotency.
+    `verification_type` is "KYC" (individual identity, investors) or "KYB"
+    (business verification, SMEs) and selects which Didit workflow to run.
+
+    If the user already has a non-terminal verification of the same type we
+    return it instead of creating a duplicate — this mirrors Didit's own
+    vendor_data idempotency.
 
     `language` is the caller's preferred locale (e.g. from the frontend); it
     falls back to the DIDIT_LANGUAGE env default when not provided.
     """
-    existing = _latest_for_user(db, user.id)
+    existing = _latest_for_user(db, user.id, verification_type)
     if existing is not None and not existing.is_terminal:
         return existing
 
     lang = _normalize_language(language) or _normalize_language(settings.DIDIT_LANGUAGE)
     contact = {"email": user.email} if user.email else None
     data = client.create_session(
+        workflow_id=_workflow_for(verification_type),
         vendor_data=str(user.id),
         callback=_callback_url(),
-        metadata={"user_id": str(user.id)},
+        metadata={"user_id": str(user.id), "verification_type": verification_type},
         contact_details=contact,
         language=lang,
     )
 
-    verification = KycVerification(
+    verification = Verification(
         user_id=user.id,
+        verification_type=verification_type,
         session_id=str(data["session_id"]),
         session_number=data.get("session_number"),
         vendor_data=data.get("vendor_data") or str(user.id),
@@ -93,7 +119,7 @@ def start_verification(
     return verification
 
 
-def sync_verification(db: Session, verification: KycVerification) -> KycVerification:
+def sync_verification(db: Session, verification: Verification) -> Verification:
     """Pull the latest decision from Didit and persist status + decision."""
     data = client.retrieve_decision(verification.session_id)
     verification.status = data.get("status") or verification.status
@@ -103,8 +129,10 @@ def sync_verification(db: Session, verification: KycVerification) -> KycVerifica
     return verification
 
 
-def get_status(db: Session, user: User) -> KycVerification | None:
-    return _latest_for_user(db, user.id)
+def get_status(
+    db: Session, user: User, verification_type: str = "KYC"
+) -> Verification | None:
+    return _latest_for_user(db, user.id, verification_type)
 
 
 # --------------------------------------------------------------------------- #
@@ -222,14 +250,14 @@ def already_processed(db: Session, event_id: str | None) -> bool:
     if not event_id:
         return False
     return (
-        db.query(KycWebhookEvent.event_id)
-        .filter(KycWebhookEvent.event_id == event_id)
+        db.query(VerificationWebhookEvent.event_id)
+        .filter(VerificationWebhookEvent.event_id == event_id)
         .first()
         is not None
     )
 
 
-def handle_webhook(db: Session, payload: dict[str, Any]) -> KycVerification | None:
+def handle_webhook(db: Session, payload: dict[str, Any]) -> Verification | None:
     """Apply a verified webhook payload to the matching verification row.
 
     The webhook is treated as a trigger: we persist the envelope status and
@@ -243,11 +271,11 @@ def handle_webhook(db: Session, payload: dict[str, Any]) -> KycVerification | No
     # Record the delivery for idempotency before applying side effects.
     event_id = payload.get("event_id")
     if event_id:
-        db.add(KycWebhookEvent(event_id=str(event_id), session_id=session_id))
+        db.add(VerificationWebhookEvent(event_id=str(event_id), session_id=session_id))
 
     verification = (
-        db.query(KycVerification)
-        .filter(KycVerification.session_id == session_id)
+        db.query(Verification)
+        .filter(Verification.session_id == session_id)
         .first()
     )
     if verification is None:
