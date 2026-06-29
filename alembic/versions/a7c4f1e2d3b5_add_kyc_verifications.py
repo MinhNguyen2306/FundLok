@@ -50,13 +50,18 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint("session_id", name="uq_kyc_verifications_session_id"),
     )
     op.create_index(
         "ix_kyc_verifications_user_id", "kyc_verifications", ["user_id"]
     )
+    # unique=True matches the model's `Column(..., unique=True, index=True)`,
+    # which SQLAlchemy expresses as a single unique index (not a separate
+    # UniqueConstraint). Keeps `alembic check` clean.
     op.create_index(
-        "ix_kyc_verifications_session_id", "kyc_verifications", ["session_id"]
+        "ix_kyc_verifications_session_id",
+        "kyc_verifications",
+        ["session_id"],
+        unique=True,
     )
 
     # Idempotency ledger for Didit webhook deliveries (dedupe on event_id).
