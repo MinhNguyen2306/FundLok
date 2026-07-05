@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -6,15 +7,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.lending.models import LoanApplication, LoanApplicationDocument
+from app.lending.models import Document, LoanApplication, LoanApplicationDocument, Project
 from app.projects.service import user_owns_project
 from app.uploads.schemas import (
     DOCUMENT_TYPE_RULES,
     EXTENSION_CONTENT_TYPES,
+    FileCommitRequest,
+    FilePresignRequest,
     UploadConfirmRequest,
     UploadPresignRequest,
 )
-from app.users.models import User
+from app.users.models import Role, User
 from app.utils.r2 import delete_object, head_object, presign_put
 
 
@@ -138,3 +141,83 @@ async def confirm_uploads(
         db.add(doc)
     await db.flush()
     return [by_key[k] for k in file_keys]
+
+
+# --------------------------------------------------------------------------- #
+# Generic (business/project-level) document presign+commit, merged in from
+# app/files/ (HANDOFF-02 Fix C, module cleanup). Behavior is unchanged from
+# the original app/files/service.py -- only the import location moved.
+# --------------------------------------------------------------------------- #
+
+def _file_purpose_allowed(purpose: str) -> bool:
+    return purpose in (
+        "KYC_ID",
+        "KYC_ADDRESS",
+        "KYC_BUSINESS_REG",
+        "BANK_STATEMENT",
+        "INVOICE",
+        "OTHER",
+    )
+
+
+async def create_file_presign(
+    db: AsyncSession,
+    body: FilePresignRequest,
+    current_user: User,
+) -> tuple[Document, str]:
+    if current_user.role not in (Role.SME.value, Role.ADMIN.value):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    if not _file_purpose_allowed(body.purpose):
+        raise HTTPException(status_code=400, detail="Invalid purpose")
+    result = await db.execute(select(Project).where(Project.id == body.business_id))
+    proj = result.scalar_one_or_none()
+    if not proj:
+        raise HTTPException(status_code=404, detail="Business not found")
+    if current_user.role == Role.SME.value and not await user_owns_project(db, current_user.id, body.business_id):
+        raise HTTPException(status_code=403, detail="Business does not belong to this user")
+
+    storage_key = f"fundlok/{body.business_id}/{uuid.uuid4()}/{body.filename}"
+    doc = Document(
+        entity_type="PROJECT",
+        entity_id=body.business_id,
+        purpose=body.purpose,
+        filename=body.filename,
+        mime_type=body.mime_type,
+        status="PENDING",
+        storage_key=storage_key,
+    )
+    db.add(doc)
+    await db.flush()
+    upload_url = f"{settings.MOCK_UPLOAD_BASE_URL.rstrip('/')}/{doc.id}?key={storage_key}"
+    return doc, upload_url
+
+
+async def commit_file(
+    db: AsyncSession,
+    file_id: UUID,
+    body: FileCommitRequest,
+    current_user: User,
+) -> Document:
+    result = await db.execute(select(Document).where(Document.id == file_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="File not found")
+    if doc.entity_type == "PROJECT":
+        if current_user.role == Role.SME.value and not await user_owns_project(
+            db, current_user.id, doc.entity_id
+        ):
+            raise HTTPException(status_code=403, detail="Not authorized")
+        elif current_user.role not in (Role.SME.value, Role.ADMIN.value):
+            raise HTTPException(status_code=403, detail="Not authorized")
+    else:
+        if current_user.role not in (Role.SME.value, Role.ADMIN.value):
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+    if doc.status in ("APPROVED", "UPLOADED", "SCANNING") and doc.checksum_sha256 == body.checksum:
+        return doc
+
+    doc.checksum_sha256 = body.checksum
+    doc.size_bytes = body.size
+    doc.status = "SCANNING"
+    db.add(doc)
+    return doc

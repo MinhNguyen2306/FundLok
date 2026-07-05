@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 MB = 1024 * 1024
 
@@ -61,3 +61,59 @@ class LoanApplicationDocumentOut(BaseModel):
 
 class UploadConfirmResponse(BaseModel):
     documents: list[LoanApplicationDocumentOut]
+
+
+# --------------------------------------------------------------------------- #
+# Generic (business/project-level) document presign+commit, merged in from
+# app/files/ (HANDOFF-02 Fix C, module cleanup -- see docs/handoffs/HANDOFF-02-
+# structural-fixes.md). Route paths and behavior are unchanged: still mounted
+# under /files/*, kept as a separate schema set from the loan-application
+# upload flow above since they model a different entity (Document, keyed by
+# business_id/purpose) than LoanApplicationDocument.
+# --------------------------------------------------------------------------- #
+
+FILE_ALLOWED_MIME = frozenset(
+    {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+)
+FILE_MAX_SIZE_BYTES = 25 * MB
+
+
+class FilePresignRequest(BaseModel):
+    business_id: UUID
+    purpose: str
+    filename: str
+    mime_type: str
+
+    @field_validator("mime_type")
+    @classmethod
+    def mime_allowlist(cls, v: str) -> str:
+        if v not in FILE_ALLOWED_MIME:
+            raise ValueError("mime_type not allowed")
+        return v
+
+
+class FilePresignResponse(BaseModel):
+    file_id: UUID
+    upload_url: str
+
+
+class FileCommitRequest(BaseModel):
+    checksum: str
+    size: int
+
+    @field_validator("size")
+    @classmethod
+    def size_cap(cls, v: int) -> int:
+        if v < 0 or v > FILE_MAX_SIZE_BYTES:
+            raise ValueError("size out of allowed range")
+        return v
+
+
+class FileCommitResponse(BaseModel):
+    file_id: UUID
+    status: str
