@@ -2,7 +2,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.lending.models import LoanApplication, LoanApplicationDocument
@@ -17,11 +18,12 @@ from app.users.models import User
 from app.utils.r2 import delete_object, head_object, presign_put
 
 
-def _get_owned_draft_application(db: Session, application_id: UUID, current_user: User) -> LoanApplication:
-    row = db.query(LoanApplication).filter(LoanApplication.id == application_id).first()
+async def _get_owned_draft_application(db: AsyncSession, application_id: UUID, current_user: User) -> LoanApplication:
+    result = await db.execute(select(LoanApplication).where(LoanApplication.id == application_id))
+    row = result.scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Application not found")
-    if not user_owns_project(db, current_user.id, row.project_id):
+    if not await user_owns_project(db, current_user.id, row.project_id):
         raise HTTPException(status_code=403, detail="Not authorized")
     if row.status != "DRAFT":
         raise HTTPException(status_code=400, detail="Application is not in DRAFT status")
@@ -51,26 +53,25 @@ def _validate_file(body: UploadPresignRequest) -> str:
     return ext
 
 
-def create_upload_presign(
-    db: Session,
+async def create_upload_presign(
+    db: AsyncSession,
     body: UploadPresignRequest,
     current_user: User,
 ) -> tuple[LoanApplicationDocument, str, int]:
-    app_row = _get_owned_draft_application(db, body.loan_application_id, current_user)
+    app_row = await _get_owned_draft_application(db, body.loan_application_id, current_user)
     ext = _validate_file(body)
 
     # Key is generated server-side; the client never picks it. The name is
     # deterministic per document type, so a re-upload overwrites the old object
     # and each application holds at most one file per type.
     file_key = f"application_documents/{current_user.id}/{app_row.id}/{body.document_type}.{ext}"
-    doc = (
-        db.query(LoanApplicationDocument)
-        .filter(
+    result = await db.execute(
+        select(LoanApplicationDocument).where(
             LoanApplicationDocument.loan_application_id == app_row.id,
             LoanApplicationDocument.document_type == body.document_type,
         )
-        .first()
     )
+    doc = result.scalar_one_or_none()
     if doc:
         if doc.file_key != file_key:
             # Extension changed (e.g. e_invoice_data .zip -> .xlsx): the old
@@ -93,27 +94,26 @@ def create_upload_presign(
             status="PENDING",
         )
         db.add(doc)
-    db.flush()
+    await db.flush()
     upload_url = presign_put(file_key, body.content_type)
     return doc, upload_url, settings.R2_PRESIGN_EXPIRE_SECONDS
 
 
-def confirm_uploads(
-    db: Session,
+async def confirm_uploads(
+    db: AsyncSession,
     body: UploadConfirmRequest,
     current_user: User,
 ) -> list[LoanApplicationDocument]:
-    app_row = _get_owned_draft_application(db, body.loan_application_id, current_user)
+    app_row = await _get_owned_draft_application(db, body.loan_application_id, current_user)
 
     file_keys = list(dict.fromkeys(body.file_keys))
-    docs = (
-        db.query(LoanApplicationDocument)
-        .filter(
+    result = await db.execute(
+        select(LoanApplicationDocument).where(
             LoanApplicationDocument.loan_application_id == app_row.id,
             LoanApplicationDocument.file_key.in_(file_keys),
         )
-        .all()
     )
+    docs = result.scalars().all()
     by_key = {d.file_key: d for d in docs}
     missing = [k for k in file_keys if k not in by_key]
     if missing:
@@ -136,5 +136,5 @@ def confirm_uploads(
         doc.status = "UPLOADED"
         doc.uploaded_at = now
         db.add(doc)
-    db.flush()
+    await db.flush()
     return [by_key[k] for k in file_keys]

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.contracts.schemas import ContractCreate, ContractOut
@@ -14,13 +14,13 @@ require_admin = require_roles(Role.ADMIN)
 
 
 @router.post("/", response_model=ContractOut, status_code=201)
-def post_contract(
+async def post_contract(
     body: ContractCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    c = create_contract(db, body)
+    c = await create_contract(db, body)
     append_audit(
         db,
         entity_type="CONTRACT",
@@ -30,5 +30,5 @@ def post_contract(
         after_state={"status": c.status, "target_amount": str(c.target_amount)},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return c

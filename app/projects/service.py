@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 
 from app.lending.models import LoanApplication, Project, ProjectOwnership
@@ -11,8 +13,8 @@ from app.users.models import Role, User
 from sqlalchemy.exc import IntegrityError
 
 
-def create_project(
-    db: Session, project_data: ProjectCreate, current_user: User
+async def create_project(
+    db: AsyncSession, project_data: ProjectCreate, current_user: User
 ) -> tuple[Project, LoanApplication | None]:
     if current_user.role != Role.SME.value:
         raise HTTPException(
@@ -24,7 +26,7 @@ def create_project(
             **project_data.model_dump(exclude={"loan_application"}), status="DRAFT"
         )
         db.add(new_project)
-        db.flush()
+        await db.flush()
         db.add(
             ProjectOwnership(
                 project_id=new_project.id,
@@ -32,7 +34,7 @@ def create_project(
                 role="OWNER",
             )
         )
-        db.flush()
+        await db.flush()
         loan_app = None
         if project_data.loan_application is not None:
             loan_app = LoanApplication(
@@ -43,12 +45,12 @@ def create_project(
                 status="DRAFT",
             )
             db.add(loan_app)
-            db.flush()
-            db.refresh(loan_app)
-        db.refresh(new_project)
+            await db.flush()
+            await db.refresh(loan_app)
+        await db.refresh(new_project)
         return new_project, loan_app
     except IntegrityError as e:
-        db.rollback()
+        await db.rollback()
         err_msg = str(e.orig)
         if "tax_id" in err_msg:
             raise HTTPException(
@@ -61,43 +63,40 @@ def create_project(
         )
 
 
-def get_my_projects(db: Session, current_user: User):
+async def get_my_projects(db: AsyncSession, current_user: User):
     if current_user.role != Role.SME.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only SMEs can view their projects",
         )
-    q = (
-        db.query(Project)
+    result = await db.execute(
+        select(Project)
         .join(ProjectOwnership)
-        .filter(ProjectOwnership.user_id == current_user.id)
+        .where(ProjectOwnership.user_id == current_user.id)
         .options(
             selectinload(Project.loan_applications).selectinload(
                 LoanApplication.documents
             )
         )
     )
-    return q.all()
+    return result.scalars().all()
 
 
-
-
-def user_owns_project(db: Session, user_id: UUID, project_id: UUID) -> bool:
-    return (
-        db.query(ProjectOwnership)
-        .filter(
+async def user_owns_project(db: AsyncSession, user_id: UUID, project_id: UUID) -> bool:
+    result = await db.execute(
+        select(ProjectOwnership).where(
             ProjectOwnership.user_id == user_id,
             ProjectOwnership.project_id == project_id,
         )
-        .first()
-        is not None
     )
+    return result.scalar_one_or_none() is not None
 
 
-def display_projects(db: Session, current_user: User):
+async def display_projects(db: AsyncSession, current_user: User):
     if current_user.role != Role.INVESTOR.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only investors can view projects",
         )
-    return db.query(Project).filter(Project.status == "ACTIVE").all()
+    result = await db.execute(select(Project).where(Project.status == "ACTIVE"))
+    return result.scalars().all()

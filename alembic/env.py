@@ -5,7 +5,10 @@ from sqlalchemy import create_engine, pool
 from alembic import context
 
 from app.core.config import settings
-from app.core.database import Base
+# Import Base from app.core.base, not app.core.database: the latter now
+# eagerly constructs an async engine (HANDOFF-02 Fix A), which would blow up
+# here since Alembic intentionally stays on the sync psycopg2 driver.
+from app.core.base import Base
 
 import app.models  # noqa: F401 — register ORM mappers
 

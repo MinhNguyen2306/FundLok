@@ -10,9 +10,9 @@ import pytest
 
 
 @pytest.mark.parametrize("role", ["SME", "INVESTOR"])
-def test_role_protected_route_rejects_wrong_role_403(client, make_user, role):
-    user = make_user(role=role)
-    resp = client.post(
+async def test_role_protected_route_rejects_wrong_role_403(client, make_user, role):
+    user = await make_user(role=role)
+    resp = await client.post(
         "/market/listings",
         json={"contract_id": str(uuid.uuid4()), "target_amount": "1000.00", "min_ticket": "100.00"},
         headers=user["headers"],
@@ -21,8 +21,8 @@ def test_role_protected_route_rejects_wrong_role_403(client, make_user, role):
     assert resp.json() == {"detail": "Not authorized for this action"}
 
 
-def test_role_protected_route_rejects_unauthenticated(client):
-    resp = client.post(
+async def test_role_protected_route_rejects_unauthenticated(client):
+    resp = await client.post(
         "/market/listings",
         json={"contract_id": str(uuid.uuid4()), "target_amount": "1000.00", "min_ticket": "100.00"},
     )

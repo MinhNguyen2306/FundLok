@@ -1,16 +1,26 @@
-"""Shared pytest fixtures for the FundLok behavioral test suite (HANDOFF-01).
+"""Shared pytest fixtures for the FundLok behavioral test suite.
 
-Design constraints (see docs/handoffs/HANDOFF-01-test-suite.md):
+Originally built for HANDOFF-01 (see docs/handoffs/HANDOFF-01-test-suite.md);
+updated for HANDOFF-02 Fix A (docs/handoffs/HANDOFF-02-structural-fixes.md),
+which moved the app from sync SQLAlchemy to async. Per HANDOFF-01 §4, the
+`get_db` override was kept isolated to this one fixture specifically so this
+migration only had to touch one seam -- it did.
+
+Design constraints:
 - Schema comes from real Alembic migrations (`alembic upgrade head`) against a
   throwaway Postgres, never from `Base.metadata.create_all` — that would hide
-  migration drift that `alembic check` exists to catch.
-- The `get_db` dependency override lives here, and only here, so the later
-  async migration (HANDOFF-02) only has to touch this one seam.
+  migration drift that `alembic check` exists to catch. Alembic itself stays
+  on a sync psycopg2 URL (HANDOFF-02 Fix A) even though the app/tests are
+  async, so this file derives a separate sync URL just for that migration
+  step.
 - Tests are isolated by truncating all tables between tests (not per-test
   transactions), because some app code opens its own session outside of
   `get_db` (e.g. app.system.service.is_maintenance_active uses SessionLocal()
   directly), which would not see an uncommitted outer transaction.
 - All external I/O (email, R2, Brankas, Didit, Turnstile) is mocked/disabled.
+- Async: test functions are plain `async def` (pytest.ini sets
+  asyncio_mode = auto) and the HTTP client is httpx.AsyncClient over the
+  ASGI app directly, per HANDOFF-02 Fix A.
 """
 import os
 import sys
@@ -30,7 +40,7 @@ if str(ROOT) not in sys.path:
 # --------------------------------------------------------------------------- #
 os.environ.setdefault(
     "DATABASE_URL",
-    "postgresql+psycopg2://test_user:test_password@localhost:5432/test_db",
+    "postgresql+asyncpg://test_user:test_password@localhost:5432/test_db",
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("ALGORITHM", "HS256")
@@ -45,17 +55,22 @@ os.environ["CLOUDFLARE_TURNSTILE_SECRET_KEY"] = ""
 os.environ["R2_ENDPOINT_URL"] = ""
 os.environ["DIDIT_API_KEY"] = ""
 
-from alembic import command  # noqa: E402
-from alembic.config import Config  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker  # noqa: E402
 
-from app.core.database import Base, engine, get_db  # noqa: E402
+from app.core.base import Base  # noqa: E402
+from app.core.database import engine, get_db  # noqa: E402
 from app.lending.models import Document  # noqa: E402
 from app.main import app  # noqa: E402
+from app.users.models import User  # noqa: E402
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
+# Alembic intentionally stays on a sync driver (HANDOFF-02 Fix A) -- derive
+# its own psycopg2 URL from whatever async URL the app/tests are using,
+# rather than requiring a second env var. A no-op .replace() if DATABASE_URL
+# is already a sync URL.
+ALEMBIC_DATABASE_URL = TEST_DATABASE_URL.replace("+asyncpg", "+psycopg2")
 
 
 def iter_endpoint_routes(routes):
@@ -80,42 +95,73 @@ def iter_endpoint_routes(routes):
 @pytest.fixture(scope="session", autouse=True)
 def _migrate_schema():
     """Build the schema with real Alembic migrations, mirroring CI's
-    `alembic upgrade head` — never `Base.metadata.create_all`."""
-    cfg = Config(str(ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(ROOT / "alembic"))
-    cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    command.upgrade(cfg, "head")
+    `alembic upgrade head` — never `Base.metadata.create_all`.
+
+    This intentionally shells out to `alembic upgrade head` as a subprocess
+    (exactly like the CI "tests" job's dedicated migration step) rather than
+    calling alembic's Python API in-process. alembic/env.py reads
+    `settings.DATABASE_URL` directly (not the Config object's
+    `sqlalchemy.url`, which command.upgrade()'s in-process API would let us
+    override) -- and `settings` is a module-level singleton already
+    constructed with the asyncpg URL by the time this fixture runs. A
+    subprocess gets its own fresh `settings` from the env we pass it, which
+    is the only way to hand Alembic a sync psycopg2 URL while the rest of the
+    suite runs against the async one.
+    """
+    import subprocess
+
+    env = {**os.environ, "DATABASE_URL": ALEMBIC_DATABASE_URL}
+    result = subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"alembic upgrade head failed (exit {result.returncode}):\n"
+            f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+        )
     yield
 
 
 @pytest.fixture(autouse=True)
-def db_session():
-    """One real DB session per test, wired in as the `get_db` override.
+async def db_session():
+    """One real AsyncSession per test, wired in as the `get_db` override.
 
-    This is the single seam HANDOFF-02 (async migration) needs to touch.
+    This is the single seam HANDOFF-01 called out and HANDOFF-02's async
+    migration touched.
     """
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    TestingSessionLocal = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = TestingSessionLocal()
 
-    def _get_db_override():
-        try:
-            yield session
-        finally:
-            pass
+    async def _get_db_override():
+        yield session
 
     app.dependency_overrides[get_db] = _get_db_override
     try:
         yield session
     finally:
-        session.close()
         app.dependency_overrides.pop(get_db, None)
         # Truncate everything so tests are order-independent. CASCADE handles
         # FK ordering; RESTART IDENTITY keeps id defaults sane (none of our
         # PKs are serial today, but this is cheap insurance).
-        with engine.begin() as conn:
-            tables = [t.name for t in Base.metadata.sorted_tables if t.name != "alembic_version"]
-            if tables:
-                conn.execute(text(f'TRUNCATE TABLE {", ".join(tables)} RESTART IDENTITY CASCADE'))
+        #
+        # Deliberately reuses THIS session/connection rather than checking
+        # out a fresh one from the pool: doing the truncate on a second
+        # connection immediately after closing this one raced against
+        # asyncpg's own connection-reset bookkeeping (observed as
+        # "InterfaceError: cannot perform operation: another operation is in
+        # progress" during fixture teardown). rollback() first clears any
+        # leftover implicit transaction/aborted state from whatever the test
+        # did (e.g. a request that ended in an HTTPException).
+        await session.rollback()
+        tables = [t.name for t in Base.metadata.sorted_tables if t.name != "alembic_version"]
+        if tables:
+            await session.execute(text(f'TRUNCATE TABLE {", ".join(tables)} RESTART IDENTITY CASCADE'))
+            await session.commit()
+        await session.close()
 
 
 @pytest.fixture(autouse=True)
@@ -128,8 +174,9 @@ def _mock_external_io(monkeypatch):
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as c:
+async def client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c
 
 
@@ -138,6 +185,7 @@ def client():
 # exists. Two preconditions have no reachable endpoint at all (see comments
 # below on approve_kyc_documents and make_admin) -- those use a direct ORM
 # write (never raw SQL) purely as test setup, not as the behavior under test.
+# All of these are async closures now (HANDOFF-02): callers must `await` them.
 # --------------------------------------------------------------------------- #
 
 DEFAULT_PASSWORD = "Str0ngPassw0rd!1"
@@ -147,23 +195,23 @@ DEFAULT_PASSWORD = "Str0ngPassw0rd!1"
 def make_user(client):
     """Register (+optionally self-select a role for) a user; return tokens/headers."""
 
-    def _make(role: str | None = None, email: str | None = None, full_name: str = "Test User"):
+    async def _make(role: str | None = None, email: str | None = None, full_name: str = "Test User"):
         email = email or f"user-{uuid.uuid4().hex[:12]}@example.com"
-        reg = client.post(
+        reg = await client.post(
             "/auth/register",
             json={"email": email, "password": DEFAULT_PASSWORD, "full_name": full_name},
         )
         assert reg.status_code == 200, reg.text
         user_id = reg.json()["id"]
 
-        login = client.post("/auth/login", json={"email": email, "password": DEFAULT_PASSWORD})
+        login = await client.post("/auth/login", json={"email": email, "password": DEFAULT_PASSWORD})
         assert login.status_code == 200, login.text
         access_token = login.cookies.get("access_token")
         refresh_token = login.cookies.get("refresh_token")
         headers = {"Authorization": f"Bearer {access_token}"}
 
         if role:
-            role_resp = client.patch("/users/me/role", json={"role": role}, headers=headers)
+            role_resp = await client.patch("/users/me/role", json={"role": role}, headers=headers)
             assert role_resp.status_code == 200, role_resp.text
 
         return {
@@ -191,13 +239,12 @@ def make_admin(make_user, db_session):
     registers a normal user through the real API and then promotes it with a
     direct ORM write -- the only way to reach that state today."""
 
-    def _make(email: str | None = None):
-        from app.users.models import User
-
-        user = make_user(role=None, email=email)
-        row = db_session.query(User).filter(User.id == user["id"]).first()
+    async def _make(email: str | None = None):
+        user = await make_user(role=None, email=email)
+        result = await db_session.execute(select(User).where(User.id == user["id"]))
+        row = result.scalar_one()
         row.role = "ADMIN"
-        db_session.commit()
+        await db_session.commit()
         return user
 
     return _make
@@ -205,10 +252,10 @@ def make_admin(make_user, db_session):
 
 @pytest.fixture
 def make_project(client):
-    def _make(sme: dict, legal_name: str | None = None, tax_id: str | None = None):
+    async def _make(sme: dict, legal_name: str | None = None, tax_id: str | None = None):
         legal_name = legal_name or f"Test Co {uuid.uuid4().hex[:8]}"
         tax_id = tax_id if tax_id is not None else f"TAX-{uuid.uuid4().hex[:10]}"
-        resp = client.post(
+        resp = await client.post(
             "/projects",
             json={"legal_name": legal_name, "tax_id": tax_id},
             headers=auth_headers(sme),
@@ -221,8 +268,8 @@ def make_project(client):
 
 @pytest.fixture
 def make_loan_application(client):
-    def _make(sme: dict, project_id: str, requested_amount: str = "100000.00"):
-        resp = client.post(
+    async def _make(sme: dict, project_id: str, requested_amount: str = "100000.00"):
+        resp = await client.post(
             "/loans/applications",
             json={"business_id": project_id, "requested_amount": requested_amount},
             headers=auth_headers(sme),
@@ -235,8 +282,8 @@ def make_loan_application(client):
 
 @pytest.fixture
 def submit_loan_application(client):
-    def _submit(sme: dict, application_id: str):
-        return client.post(
+    async def _submit(sme: dict, application_id: str):
+        return await client.post(
             f"/loans/applications/{application_id}/submit",
             headers=auth_headers(sme),
         )
@@ -250,15 +297,15 @@ def run_and_lock_score(client):
     application) and immediately lock it (READY -> LOCKED). Returns the
     score_run id."""
 
-    def _run(admin: dict, application_id: str):
-        start = client.post(
+    async def _run(admin: dict, application_id: str):
+        start = await client.post(
             "/underwriting/score-runs",
             json={"application_id": application_id, "mode": None},
             headers=auth_headers(admin),
         )
         assert start.status_code == 201, start.text
         score_run_id = start.json()["id"]
-        approve = client.post(
+        approve = await client.post(
             f"/underwriting/score-runs/{score_run_id}/approve",
             headers=auth_headers(admin),
         )
@@ -270,8 +317,8 @@ def run_and_lock_score(client):
 
 @pytest.fixture
 def make_contract(client):
-    def _make(admin: dict, application_id: str, score_run_id: str):
-        resp = client.post(
+    async def _make(admin: dict, application_id: str, score_run_id: str):
+        resp = await client.post(
             "/contracts/",
             json={"application_id": application_id, "score_run_id": score_run_id},
             headers=auth_headers(admin),
@@ -296,7 +343,7 @@ def approve_kyc_documents(db_session):
     """
     from app.lending.kyc import KYC_PURPOSES
 
-    def _approve(project_id: str):
+    async def _approve(project_id: str):
         for purpose in KYC_PURPOSES:
             db_session.add(
                 Document(
@@ -308,15 +355,15 @@ def approve_kyc_documents(db_session):
                     storage_key=f"test/{project_id}/{purpose}.pdf",
                 )
             )
-        db_session.commit()
+        await db_session.commit()
 
     return _approve
 
 
 @pytest.fixture
 def make_listing(client):
-    def _make(admin: dict, contract_id: str, target_amount: str = "10000.00", min_ticket: str = "1000.00"):
-        resp = client.post(
+    async def _make(admin: dict, contract_id: str, target_amount: str = "10000.00", min_ticket: str = "1000.00"):
+        resp = await client.post(
             "/market/listings",
             json={"contract_id": contract_id, "target_amount": target_amount, "min_ticket": min_ticket},
             headers=auth_headers(admin),
@@ -329,12 +376,12 @@ def make_listing(client):
 
 @pytest.fixture
 def place_order(client):
-    def _place(investor: dict, listing_id: str, amount: str = "1000.00", idempotency_key: str | None = None,
-               ack_risk_disclosure: bool = True):
+    async def _place(investor: dict, listing_id: str, amount: str = "1000.00", idempotency_key: str | None = None,
+                      ack_risk_disclosure: bool = True):
         headers = dict(auth_headers(investor))
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
-        return client.post(
+        return await client.post(
             f"/market/listings/{listing_id}/orders",
             json={"amount": amount, "ackRiskDisclosure": ack_risk_disclosure},
             headers=headers,
@@ -353,17 +400,17 @@ def open_listing(make_user, make_admin, make_project, make_loan_application, sub
     Returns dict with sme, admin, project, application, contract, listing.
     """
 
-    def _setup(target_amount: str = "10000.00", min_ticket: str = "1000.00"):
-        sme = make_user(role="SME")
-        admin = make_admin()
-        project = make_project(sme)
-        application = make_loan_application(sme, project["id"], requested_amount=target_amount)
-        submit_resp = submit_loan_application(sme, application["id"])
+    async def _setup(target_amount: str = "10000.00", min_ticket: str = "1000.00"):
+        sme = await make_user(role="SME")
+        admin = await make_admin()
+        project = await make_project(sme)
+        application = await make_loan_application(sme, project["id"], requested_amount=target_amount)
+        submit_resp = await submit_loan_application(sme, application["id"])
         assert submit_resp.status_code == 200, submit_resp.text
-        score_run_id = run_and_lock_score(admin, application["id"])
-        contract = make_contract(admin, application["id"], score_run_id)
-        approve_kyc_documents(project["id"])
-        listing = make_listing(admin, contract["id"], target_amount=target_amount, min_ticket=min_ticket)
+        score_run_id = await run_and_lock_score(admin, application["id"])
+        contract = await make_contract(admin, application["id"], score_run_id)
+        await approve_kyc_documents(project["id"])
+        listing = await make_listing(admin, contract["id"], target_amount=target_amount, min_ticket=min_ticket)
         return {
             "sme": sme,
             "admin": admin,
@@ -382,10 +429,10 @@ def funded_contract(open_listing, place_order, make_user):
     contract reaches ACTIVE_FUNDED -- the precondition for disbursements and
     repayments. Returns the open_listing() dict plus "investor" and "order"."""
 
-    def _setup(target_amount: str = "10000.00", min_ticket: str = "1000.00"):
-        setup = open_listing(target_amount=target_amount, min_ticket=min_ticket)
-        investor = make_user(role="INVESTOR")
-        order_resp = place_order(investor, setup["listing"]["id"], amount=target_amount)
+    async def _setup(target_amount: str = "10000.00", min_ticket: str = "1000.00"):
+        setup = await open_listing(target_amount=target_amount, min_ticket=min_ticket)
+        investor = await make_user(role="INVESTOR")
+        order_resp = await place_order(investor, setup["listing"]["id"], amount=target_amount)
         assert order_resp.status_code == 201, order_resp.text
         setup["investor"] = investor
         setup["order"] = order_resp.json()

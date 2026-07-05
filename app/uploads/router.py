@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.uploads.schemas import (
@@ -20,13 +20,13 @@ require_sme = require_roles(Role.SME)
 
 
 @router.post("/init-upload", response_model=UploadPresignResponse, status_code=201)
-def presign_upload(
+async def presign_upload(
     body: UploadPresignRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    doc, upload_url, expires_in = create_upload_presign(db, body, current_user)
+    doc, upload_url, expires_in = await create_upload_presign(db, body, current_user)
     append_audit(
         db,
         entity_type="LOAN_APPLICATION_DOCUMENT",
@@ -40,7 +40,7 @@ def presign_upload(
         },
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return UploadPresignResponse(
         document_id=doc.id,
         file_key=doc.file_key,
@@ -50,13 +50,13 @@ def presign_upload(
 
 
 @router.post("/confirm", response_model=UploadConfirmResponse)
-def confirm_upload(
+async def confirm_upload(
     body: UploadConfirmRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    docs = confirm_uploads(db, body, current_user)
+    docs = await confirm_uploads(db, body, current_user)
     append_audit(
         db,
         entity_type="LOAN_APPLICATION",
@@ -66,7 +66,7 @@ def confirm_upload(
         after_state={"file_keys": [d.file_key for d in docs]},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return UploadConfirmResponse(
         documents=[LoanApplicationDocumentOut.model_validate(d) for d in docs]
     )

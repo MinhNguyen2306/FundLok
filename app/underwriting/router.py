@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.underwriting.schemas import ScoreRunApproveOut, ScoreRunCreate, ScoreRunOut
@@ -16,13 +16,13 @@ require_admin = require_roles(Role.ADMIN)
 
 
 @router.post("/score-runs", response_model=ScoreRunOut, status_code=201)
-def post_score_run(
+async def post_score_run(
     body: ScoreRunCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    sr = start_score_run(db, body.application_id, body.mode)
+    sr = await start_score_run(db, body.application_id, body.mode)
     append_audit(
         db,
         entity_type="SCORE_RUN",
@@ -32,18 +32,18 @@ def post_score_run(
         after_state={"status": sr.status, "application_id": str(sr.application_id)},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return sr
 
 
 @router.post("/score-runs/{score_run_id}/approve", response_model=ScoreRunApproveOut)
-def post_score_run_approve(
+async def post_score_run_approve(
     score_run_id: UUID,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    sr, is_new = approve_score_run(db, score_run_id)
+    sr, is_new = await approve_score_run(db, score_run_id)
     if is_new:
         append_audit(
             db,
@@ -54,7 +54,7 @@ def post_score_run_approve(
             after_state={"status": sr.status, "locked_at": str(sr.locked_at)},
             ip_address=request.client.host if request.client else None,
         )
-    db.commit()
+    await db.commit()
     return ScoreRunApproveOut(
         id=sr.id,
         locked_at=sr.locked_at.isoformat() if sr.locked_at else None,

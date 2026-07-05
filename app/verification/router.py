@@ -10,7 +10,7 @@ allowed to start them. The Didit webhook is not type-specific (keyed by
 session_id), so a single /kyc/webhook endpoint handles both.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.users.models import Role, User
@@ -48,10 +48,10 @@ def build_verification_router(
     authorized = require_roles(role)
 
     @router.post("/start", response_model=StartResponse, status_code=201)
-    def start(
+    async def start(
         request: Request,
         body: StartRequest | None = None,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         current_user: User = Depends(authorized),
     ):
         """Create (or reuse) a Didit session and return the hosted URL.
@@ -60,7 +60,7 @@ def build_verification_router(
         frontend. Falls back to the DIDIT_LANGUAGE env default when omitted.
         """
         try:
-            verification = service.start_verification(
+            verification = await service.start_verification(
                 db,
                 current_user,
                 verification_type=verification_type,
@@ -83,8 +83,8 @@ def build_verification_router(
             },
             ip_address=request.client.host if request.client else None,
         )
-        db.commit()
-        db.refresh(verification)
+        await db.commit()
+        await db.refresh(verification)
         return StartResponse(
             verification_id=verification.id,
             session_id=verification.session_id,
@@ -93,12 +93,12 @@ def build_verification_router(
         )
 
     @router.get("/status", response_model=StatusResponse)
-    def get_status(
-        db: Session = Depends(get_db),
+    async def get_status(
+        db: AsyncSession = Depends(get_db),
         current_user: User = Depends(authorized),
     ):
         """Return the current user's latest verification of this type, if any."""
-        verification = service.get_status(db, current_user, verification_type)
+        verification = await service.get_status(db, current_user, verification_type)
         if verification is None:
             raise HTTPException(
                 status_code=404, detail=f"No {verification_type} verification found"
@@ -106,24 +106,24 @@ def build_verification_router(
         return _to_status(verification)
 
     @router.post("/sync", response_model=StatusResponse)
-    def sync(
-        db: Session = Depends(get_db),
+    async def sync(
+        db: AsyncSession = Depends(get_db),
         current_user: User = Depends(authorized),
     ):
         """Pull the latest decision from Didit for the user's session (FE poll fallback)."""
-        verification = service.get_status(db, current_user, verification_type)
+        verification = await service.get_status(db, current_user, verification_type)
         if verification is None:
             raise HTTPException(
                 status_code=404, detail=f"No {verification_type} verification found"
             )
         try:
-            verification = service.sync_verification(db, verification)
+            verification = await service.sync_verification(db, verification)
         except DiditError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             )
-        db.commit()
-        db.refresh(verification)
+        await db.commit()
+        await db.refresh(verification)
         return _to_status(verification)
 
     return router
@@ -141,7 +141,7 @@ kyb_router = build_verification_router(
 
 
 @kyc_router.post("/webhook", status_code=200)
-async def webhook(request: Request, db: Session = Depends(get_db)):
+async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Receive Didit verification webhooks (both KYC and KYB).
 
     The webhook is keyed by session_id, so a single endpoint handles every
@@ -161,10 +161,10 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     # Idempotency: Didit redelivers on failure — skip if we've seen this event.
-    if service.already_processed(db, payload.get("event_id")):
+    if await service.already_processed(db, payload.get("event_id")):
         return {"received": True, "duplicate": True}
 
-    verification = service.handle_webhook(db, payload)
+    verification = await service.handle_webhook(db, payload)
     if verification is not None:
         append_audit(
             db,
@@ -174,6 +174,6 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
             actor_id=None,
             after_state={"status": verification.status},
         )
-        db.commit()
+        await db.commit()
     # Always 200 so Didit does not retry on unknown/stale sessions.
     return {"received": True}

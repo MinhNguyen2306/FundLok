@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.projects.schemas import ProjectCreate, ProjectOut
@@ -14,13 +14,13 @@ require_sme = require_roles(Role.SME)
 
 
 @router.post("/businesses", response_model=ProjectOut, status_code=201)
-def create_business(
+async def create_business(
     body: ProjectCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    project, _loan_app = create_project(db, body, current_user)
+    project, _loan_app = await create_project(db, body, current_user)
     append_audit(
         db,
         entity_type="PROJECT",
@@ -30,5 +30,5 @@ def create_business(
         after_state={"legal_name": project.legal_name, "status": project.status},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return project

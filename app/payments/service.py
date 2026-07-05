@@ -3,13 +3,14 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.lending.models import Contract, Holding, LedgerEntry, Listing
 
 
-def record_disbursement(
-    db: Session,
+async def record_disbursement(
+    db: AsyncSession,
     *,
     contract_id: UUID,
     bank_account: str,
@@ -21,11 +22,10 @@ def record_disbursement(
         raise HTTPException(status_code=400, detail="Amount must be positive")
 
     if idempotency_key:
-        existing = (
-            db.query(LedgerEntry)
-            .filter(LedgerEntry.idempotency_key == idempotency_key)
-            .first()
+        result = await db.execute(
+            select(LedgerEntry).where(LedgerEntry.idempotency_key == idempotency_key)
         )
+        existing = result.scalar_one_or_none()
         if existing:
             if existing.contract_id != contract_id:
                 raise HTTPException(
@@ -34,10 +34,12 @@ def record_disbursement(
                 )
             return existing, False
 
-    c = db.query(Contract).filter(Contract.id == contract_id).first()
+    result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Contract not found")
-    lst = db.query(Listing).filter(Listing.contract_id == contract_id).first()
+    result = await db.execute(select(Listing).where(Listing.contract_id == contract_id))
+    lst = result.scalar_one_or_none()
     if not lst or lst.status != "FUNDED":
         raise HTTPException(
             status_code=400,
@@ -55,13 +57,13 @@ def record_disbursement(
         idempotency_key=idempotency_key,
     )
     db.add(entry)
-    db.flush()
-    db.refresh(entry)
+    await db.flush()
+    await db.refresh(entry)
     return entry, True
 
 
-def record_repayment(
-    db: Session,
+async def record_repayment(
+    db: AsyncSession,
     *,
     contract_id: UUID,
     amount: Decimal,
@@ -74,14 +76,13 @@ def record_repayment(
         raise HTTPException(status_code=400, detail="Amount must be non-negative")
 
     if idempotency_key:
-        existing = (
-            db.query(LedgerEntry)
-            .filter(
+        result = await db.execute(
+            select(LedgerEntry).where(
                 LedgerEntry.idempotency_key == idempotency_key,
                 LedgerEntry.type == "REPAYMENT",
             )
-            .first()
         )
+        existing = result.scalar_one_or_none()
         if existing:
             if existing.contract_id != contract_id:
                 raise HTTPException(
@@ -89,18 +90,18 @@ def record_repayment(
                     detail="Idempotency-Key already used for a different contract",
                 )
             pattern = f"repayment:{existing.id}:%"
-            dists = (
-                db.query(LedgerEntry)
-                .filter(
+            result = await db.execute(
+                select(LedgerEntry).where(
                     LedgerEntry.contract_id == contract_id,
                     LedgerEntry.type == "DISTRIBUTION",
                     LedgerEntry.reference.like(pattern),
                 )
-                .all()
             )
+            dists = result.scalars().all()
             return existing, dists, False
 
-    c = db.query(Contract).filter(Contract.id == contract_id).first()
+    result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Contract not found")
     if c.status != "ACTIVE_FUNDED":
@@ -119,9 +120,10 @@ def record_repayment(
         idempotency_key=idempotency_key,
     )
     db.add(rep)
-    db.flush()
+    await db.flush()
 
-    holdings = db.query(Holding).filter(Holding.contract_id == contract_id).all()
+    result = await db.execute(select(Holding).where(Holding.contract_id == contract_id))
+    holdings = result.scalars().all()
     total_principal = sum((h.principal for h in holdings), Decimal("0"))
     distributions: list[LedgerEntry] = []
     if total_principal > 0 and amount > 0:
@@ -137,6 +139,6 @@ def record_repayment(
             )
             db.add(dist)
             distributions.append(dist)
-    db.flush()
-    db.refresh(rep)
+    await db.flush()
+    await db.refresh(rep)
     return rep, distributions, True

@@ -4,7 +4,8 @@ from secrets import token_urlsafe
 import httpx
 from fastapi import HTTPException, status
 from jose import jwt
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import create_token_pair
 from app.core.config import settings
@@ -21,12 +22,12 @@ class OAuthProviderBase(ABC):
     def __init__(self, client_id: str | None):
         self.client_id = client_id
 
-    def login(self, db: Session, token: str) -> dict:
+    async def login(self, db: AsyncSession, token: str) -> dict:
         claims = self.verify_token(token)
         user_info = self.map_claims(claims)
-        user = self.get_or_create_user(db, user_info)
-        tokens = create_token_pair(db, user.id)
-        db.commit()
+        user = await self.get_or_create_user(db, user_info)
+        tokens = await create_token_pair(db, user.id)
+        await db.commit()
         return tokens
 
     def verify_token(self, token: str) -> dict:
@@ -79,15 +80,16 @@ class OAuthProviderBase(ABC):
     def _issuer_is_valid(self, issuer: str | None) -> bool:
         raise NotImplementedError
 
-    def get_or_create_user(self, db: Session, user_info: OAuthUserInfo) -> User:
-        user = db.query(User).filter(User.email == user_info.email).first()
+    async def get_or_create_user(self, db: AsyncSession, user_info: OAuthUserInfo) -> User:
+        result = await db.execute(select(User).where(User.email == user_info.email))
+        user = result.scalar_one_or_none()
         if user:
             # The provider has already confirmed ownership of this email, so an
             # existing account that signed up via email/password should be
             # considered verified once they log in through OAuth.
             if user_info.email_verified and not user.email_verified:
                 user.email_verified = True
-                db.flush()
+                await db.flush()
             return user
 
         user = User(
@@ -100,7 +102,7 @@ class OAuthProviderBase(ABC):
             email_verified= True,
         )
         db.add(user)
-        db.flush()
+        await db.flush()
         return user
 
     def _fetch_json(self, url: str) -> dict:
@@ -139,7 +141,7 @@ class GoogleOAuthProvider(OAuthProviderBase):
             full_name=claims.get("name"),
             email_verified=bool(claims.get("email_verified")),
         )
-    
+
     def verify_token(self, token: str) -> dict:
         return self.verify_access_token(token)
 
@@ -185,18 +187,18 @@ class MicrosoftOAuthProvider(OAuthProviderBase):
 
 
 class OAuthService:
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
         self.providers = {
             OAuthProvider.GOOGLE: GoogleOAuthProvider(settings.GOOGLE_CLIENT_ID),
             OAuthProvider.MICROSOFT: MicrosoftOAuthProvider(settings.MICROSOFT_CLIENT_ID),
         }
 
-    def login(self, provider: OAuthProvider, token: str) -> dict:
+    async def login(self, provider: OAuthProvider, token: str) -> dict:
         oauth_provider = self.providers.get(provider)
         if oauth_provider is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported OAuth provider",
             )
-        return oauth_provider.login(self.db, token)
+        return await oauth_provider.login(self.db, token)

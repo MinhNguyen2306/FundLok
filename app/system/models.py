@@ -1,7 +1,7 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-from app.core.database import Base
+from app.core.base import Base
 
 
 class SystemSetting(Base):

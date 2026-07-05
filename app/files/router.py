@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.files.schemas import CommitRequest, CommitResponse, PresignRequest, PresignResponse
@@ -14,13 +14,13 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 
 @router.post("/presign", response_model=PresignResponse, status_code=201)
-def presign(
+async def presign(
     body: PresignRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    doc, upload_url = create_presign(db, body, current_user)
+    doc, upload_url = await create_presign(db, body, current_user)
     append_audit(
         db,
         entity_type="DOCUMENT",
@@ -30,19 +30,19 @@ def presign(
         after_state={"purpose": doc.purpose, "business_id": str(body.business_id)},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return PresignResponse(file_id=doc.id, upload_url=upload_url)
 
 
 @router.post("/{file_id}/commit", response_model=CommitResponse)
-def commit(
+async def commit(
     file_id: UUID,
     body: CommitRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    doc = commit_file(db, file_id, body, current_user)
+    doc = await commit_file(db, file_id, body, current_user)
     append_audit(
         db,
         entity_type="DOCUMENT",
@@ -52,5 +52,5 @@ def commit(
         after_state={"status": doc.status, "checksum": body.checksum},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return CommitResponse(file_id=doc.id, status=doc.status)

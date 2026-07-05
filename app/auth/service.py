@@ -2,7 +2,8 @@ from datetime import timedelta
 from uuid import UUID
 
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
 
 from app.auth.schemas import (
@@ -25,28 +26,46 @@ from app.utils.captcha import verify_turnstile_token
 from app.core.config import settings
 
 
-def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(User).filter(User.email == email).first()
+async def authenticate_user(db: AsyncSession, email: str, password: str):
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
     if not user or not verify_password(password, user.password_hash):
         return None
     return user
 
 
-def create_token_pair(db: Session, user_id: UUID) -> dict:
-    # NOTE: refresh tokens are stateless JWTs for MVP robustness.
-    # This avoids DB dependencies when `refresh_tokens` table can't be created/altered.
+async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
+    """Issue an access/refresh JWT pair.
+
+    Stateless (HANDOFF-01 characterized behavior, preserved as-is by Fix A):
+    refresh tokens are signed JWTs only, never persisted -- there is no
+    server-side revocation yet. `db` is accepted (and unused) purely to keep
+    this signature stable across HANDOFF-02 Fix B, which adds persistence
+    here in a later commit.
+    """
+    uid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": str(user_id)}, expires_delta=access_token_expires
+        data={"sub": str(uid)}, expires_delta=access_token_expires
     )
+
     refresh_token = create_access_token(
-        data={"sub": str(user_id), "typ": "refresh"},
+        data={"sub": str(uid), "typ": "refresh"},
         expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
+
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-def refresh_token_pair(db: Session, refresh_token: str) -> dict:
+async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
+    """Verify a refresh JWT and issue a new pair.
+
+    Stateless (HANDOFF-01 characterized behavior): only the JWT
+    signature/expiry/claims are checked -- there is no revocation list, so a
+    still-valid (unexpired) refresh token can be used to mint new pairs
+    indefinitely. HANDOFF-02 Fix B changes this in a later commit.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired refresh token",
@@ -65,20 +84,7 @@ def refresh_token_pair(db: Session, refresh_token: str) -> dict:
     except JWTError:
         raise credentials_exception
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user_id)}, expires_delta=access_token_expires
-    )
-    # Rotate refresh for better hygiene (still stateless).
-    new_refresh_token = create_access_token(
-        data={"sub": str(user_id), "typ": "refresh"},
-        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    )
-    return {
-        "access_token": access_token,
-        "refresh_token": new_refresh_token,
-        "token_type": "bearer",
-    }
+    return await create_token_pair(db, user_id)
 
 
 def _parse_user_id(user_id: str) -> UUID:
@@ -88,28 +94,31 @@ def _parse_user_id(user_id: str) -> UUID:
         raise HTTPException(status_code=400, detail="Invalid token details")
 
 
-def login(db: Session, login_data: LoginRequest) -> tuple[User, dict]:
+async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]:
     verify_turnstile_token(login_data.turnstile_token)
 
-    user = authenticate_user(db, login_data.email, login_data.password)
+    user = await authenticate_user(db, login_data.email, login_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
-    tokens = create_token_pair(db, user.id)
-    db.commit()
+    tokens = await create_token_pair(db, user.id)
+    await db.commit()
     return user, tokens
 
 
-def register_user(db: Session, user_in: UserCreate, background_tasks: BackgroundTasks) -> User:
+async def register_user(db: AsyncSession, user_in: UserCreate, background_tasks: BackgroundTasks) -> User:
     verify_turnstile_token(user_in.turnstile_token)
 
-    if db.query(User).filter(User.email == user_in.email).first():
+    result = await db.execute(select(User).where(User.email == user_in.email))
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    if user_in.phone and db.query(User).filter(User.phone == user_in.phone).first():
-        raise HTTPException(status_code=400, detail="Phone number already registered")
+    if user_in.phone:
+        result = await db.execute(select(User).where(User.phone == user_in.phone))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Phone number already registered")
 
     new_user = User(
         email=user_in.email,
@@ -121,8 +130,8 @@ def register_user(db: Session, user_in: UserCreate, background_tasks: Background
         email_verified=False,
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
 
     # Generate verification token and send verification email in background.
     token = create_verification_token(new_user.id)
@@ -131,10 +140,11 @@ def register_user(db: Session, user_in: UserCreate, background_tasks: Background
     return new_user
 
 
-def verify_email(db: Session, token: str) -> dict:
+async def verify_email(db: AsyncSession, token: str) -> dict:
     uid = _parse_user_id(verify_email_token(token))
 
-    user = db.query(User).filter(User.id == uid).first()
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -142,12 +152,13 @@ def verify_email(db: Session, token: str) -> dict:
         return {"status": "success", "message": "Email already verified"}
 
     user.email_verified = True
-    db.commit()
+    await db.commit()
     return {"status": "success", "message": "Email verified successfully"}
 
 
-def resend_verification(db: Session, email: str, background_tasks: BackgroundTasks) -> dict:
-    user = db.query(User).filter(User.email == email).first()
+async def resend_verification(db: AsyncSession, email: str, background_tasks: BackgroundTasks) -> dict:
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
     if not user:
         # Avoid user enumeration by returning a success-like message even if user doesn't exist.
         return {"status": "success", "message": "If the email exists, a verification link has been sent."}
@@ -160,13 +171,14 @@ def resend_verification(db: Session, email: str, background_tasks: BackgroundTas
     return {"status": "success", "message": "Verification link has been sent."}
 
 
-def forgot_password(db: Session, body: ForgotPasswordRequest, background_tasks: BackgroundTasks) -> dict:
+async def forgot_password(db: AsyncSession, body: ForgotPasswordRequest, background_tasks: BackgroundTasks) -> dict:
     verify_turnstile_token(body.turnstile_token)
 
     # Same response whether or not the email exists, to avoid user enumeration.
     response = {"status": "success", "message": "If the email is registered, a password reset link has been sent."}
 
-    user = db.query(User).filter(User.email == body.email).first()
+    result = await db.execute(select(User).where(User.email == body.email))
+    user = result.scalar_one_or_none()
     if not user:
         return response
 
@@ -175,13 +187,14 @@ def forgot_password(db: Session, body: ForgotPasswordRequest, background_tasks: 
     return response
 
 
-def reset_password(db: Session, body: ResetPasswordRequest) -> dict:
+async def reset_password(db: AsyncSession, body: ResetPasswordRequest) -> dict:
     uid = _parse_user_id(verify_password_reset_token(body.token))
 
-    user = db.query(User).filter(User.id == uid).first()
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     user.password_hash = hash_password(body.new_password)
-    db.commit()
+    await db.commit()
     return {"status": "success", "message": "Password reset successfully"}
