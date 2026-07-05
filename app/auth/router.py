@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.auth.schemas import (
@@ -32,29 +32,29 @@ def _set_auth_cookies(response: Response, tokens: dict) -> None:
 
 
 @router.post("/login", response_model=UserOut)
-def simple_login(response: Response, login_data: LoginRequest, db: Session = Depends(get_db)):
-    user, tokens = service.login(db, login_data)
+async def simple_login(response: Response, login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    user, tokens = await service.login(db, login_data)
     _set_auth_cookies(response, tokens)
     return user
 
 
 @router.post("/register", response_model=UserOut)
-def register(user: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    return service.register_user(db, user, background_tasks)
+async def register(user: UserCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    return await service.register_user(db, user, background_tasks)
 
 
 @router.get("/verify-email")
-def verify_email(token: str, db: Session = Depends(get_db)):
-    return service.verify_email(db, token)
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    return await service.verify_email(db, token)
 
 
 @router.post("/resend-verification")
-def resend_verification(body: ResendVerificationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    return service.resend_verification(db, body.email, background_tasks)
+async def resend_verification(body: ResendVerificationRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    return await service.resend_verification(db, body.email, background_tasks)
 
 
 @router.post("/refresh", response_model=Token)
-def refresh_tokens(request: Request, response: Response, body: RefreshRequest = None, db: Session = Depends(get_db)):
+async def refresh_tokens(request: Request, response: Response, body: RefreshRequest = None, db: AsyncSession = Depends(get_db)):
     refresh_token = body.refresh_token if body and body.refresh_token else request.cookies.get("refresh_token")
     if not refresh_token:
         raise HTTPException(
@@ -62,24 +62,30 @@ def refresh_tokens(request: Request, response: Response, body: RefreshRequest = 
             detail="Refresh token missing",
         )
 
-    tokens = service.refresh_token_pair(db, refresh_token)
-    db.commit()
+    tokens = await service.refresh_token_pair(db, refresh_token)
+    await db.commit()
     _set_auth_cookies(response, tokens)
     return tokens
 
 
 @router.post("/logout")
-def logout(response: Response):
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # HANDOFF-02 Fix B: revoke the presented refresh token server-side, not
+    # just clear the cookie -- a stolen token no longer stays valid until
+    # natural expiry after the legitimate user logs out.
+    refresh_token = request.cookies.get("refresh_token")
+    result = await service.logout(db, refresh_token)
+    await db.commit()
     response.delete_cookie(key="access_token", httponly=True, samesite="lax")
     response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
-    return {"status": "success", "message": "Logged out successfully"}
+    return result
 
 
 @router.post("/forgot-password")
-def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    return service.forgot_password(db, body, background_tasks)
+async def forgot_password(body: ForgotPasswordRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    return await service.forgot_password(db, body, background_tasks)
 
 
 @router.post("/reset-password")
-def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    return service.reset_password(db, body)
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    return await service.reset_password(db, body)

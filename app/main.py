@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware # Added for CORS support
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin.router import router as admin_router
 from app.system.service import is_maintenance_active
 from app.system.router import router as system_router
@@ -56,7 +56,7 @@ MAINTENANCE_ALLOW_PREFIXES = (
 async def maintenance_gate(request: Request, call_next):
     if request.method == "OPTIONS" or request.url.path.startswith(MAINTENANCE_ALLOW_PREFIXES):
         return await call_next(request)
-    enabled, message = is_maintenance_active()
+    enabled, message = await is_maintenance_active()
     if enabled:
         return JSONResponse(
             status_code=503,
@@ -88,8 +88,8 @@ def health_check():
     return {"status": "healthy"}
 
 @app.get("/test-db")
-def test_db(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT 1")).scalar()
+async def test_db(db: AsyncSession = Depends(get_db)):
+    result = (await db.execute(text("SELECT 1"))).scalar()
     return {"db_connected": result == 1}
 
 

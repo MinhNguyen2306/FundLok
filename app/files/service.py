@@ -2,7 +2,8 @@ import uuid
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.lending.models import Document, Project
@@ -22,8 +23,8 @@ def _purpose_allowed(purpose: str) -> bool:
     )
 
 
-def create_presign(
-    db: Session,
+async def create_presign(
+    db: AsyncSession,
     body: PresignRequest,
     current_user: User,
 ) -> tuple[Document, str]:
@@ -31,10 +32,11 @@ def create_presign(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
     if not _purpose_allowed(body.purpose):
         raise HTTPException(status_code=400, detail="Invalid purpose")
-    proj = db.query(Project).filter(Project.id == body.business_id).first()
+    result = await db.execute(select(Project).where(Project.id == body.business_id))
+    proj = result.scalar_one_or_none()
     if not proj:
         raise HTTPException(status_code=404, detail="Business not found")
-    if current_user.role == Role.SME.value and not user_owns_project(db, current_user.id, body.business_id):
+    if current_user.role == Role.SME.value and not await user_owns_project(db, current_user.id, body.business_id):
         raise HTTPException(status_code=403, detail="Business does not belong to this user")
 
     storage_key = f"fundlok/{body.business_id}/{uuid.uuid4()}/{body.filename}"
@@ -48,22 +50,23 @@ def create_presign(
         storage_key=storage_key,
     )
     db.add(doc)
-    db.flush()
+    await db.flush()
     upload_url = f"{settings.MOCK_UPLOAD_BASE_URL.rstrip('/')}/{doc.id}?key={storage_key}"
     return doc, upload_url
 
 
-def commit_file(
-    db: Session,
+async def commit_file(
+    db: AsyncSession,
     file_id: UUID,
     body: CommitRequest,
     current_user: User,
 ) -> Document:
-    doc = db.query(Document).filter(Document.id == file_id).first()
+    result = await db.execute(select(Document).where(Document.id == file_id))
+    doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="File not found")
     if doc.entity_type == "PROJECT":
-        if current_user.role == Role.SME.value and not user_owns_project(
+        if current_user.role == Role.SME.value and not await user_owns_project(
             db, current_user.id, doc.entity_id
         ):
             raise HTTPException(status_code=403, detail="Not authorized")

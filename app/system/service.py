@@ -1,7 +1,7 @@
 import time
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
 from app.system.models import SystemSetting
@@ -11,8 +11,8 @@ from app.system.schemas import MaintenanceState
 MAINTENANCE_KEY = "maintenance_mode"
 
 
-def get_maintenance(db: Session) -> MaintenanceState:
-    row = db.get(SystemSetting, MAINTENANCE_KEY)
+async def get_maintenance(db: AsyncSession) -> MaintenanceState:
+    row = await db.get(SystemSetting, MAINTENANCE_KEY)
     if row is None:
         return MaintenanceState(enabled=False)
     value = row.value or {}
@@ -24,11 +24,11 @@ def get_maintenance(db: Session) -> MaintenanceState:
     )
 
 
-def set_maintenance(
-    db: Session, *, enabled: bool, message: str | None, actor_id: UUID | None
+async def set_maintenance(
+    db: AsyncSession, *, enabled: bool, message: str | None, actor_id: UUID | None
 ) -> MaintenanceState:
     value = {"enabled": enabled, "message": message}
-    row = db.get(SystemSetting, MAINTENANCE_KEY)
+    row = await db.get(SystemSetting, MAINTENANCE_KEY)
     if row is None:
         row = SystemSetting(
             key=MAINTENANCE_KEY,
@@ -40,9 +40,9 @@ def set_maintenance(
     else:
         row.value = value
         row.updated_by = actor_id
-    db.commit()
+    await db.commit()
     _invalidate_maintenance_cache()
-    return get_maintenance(db)
+    return await get_maintenance(db)
 
 
 # --- Lightweight cache so the request middleware doesn't hit the DB every call.
@@ -55,15 +55,18 @@ def _invalidate_maintenance_cache() -> None:
     _maint_cache["ts"] = 0.0
 
 
-def is_maintenance_active() -> tuple[bool, str | None]:
-    """(enabled, message) for the middleware. Cached for a few seconds."""
+async def is_maintenance_active() -> tuple[bool, str | None]:
+    """(enabled, message) for the middleware. Cached for a few seconds.
+
+    HANDOFF-02 Fix A: this now opens its own AsyncSession via `async with
+    SessionLocal()` instead of the old sync `SessionLocal(); ...; db.close()`
+    pattern -- still independent of the `get_db` request dependency (that
+    part of the original design is unchanged), just async now.
+    """
     now = time.monotonic()
     if _maint_cache["value"] is None or now - _maint_cache["ts"] > _MAINT_TTL_SECONDS:
-        db = SessionLocal()
-        try:
-            state = get_maintenance(db)
+        async with SessionLocal() as db:
+            state = await get_maintenance(db)
             _maint_cache["value"] = (state.enabled, state.message)
-        finally:
-            db.close()
         _maint_cache["ts"] = now
     return _maint_cache["value"]

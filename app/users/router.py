@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.users.models import User
@@ -29,10 +29,10 @@ def read_current_user(current_user: User = Depends(get_current_user)):
 
 
 @router.patch("/me")
-def update_current_user(
+async def update_current_user(
     body: UserUpdateRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     before = {
@@ -40,7 +40,7 @@ def update_current_user(
         "phone": current_user.phone,
         "bio": current_user.bio,
     }
-    user = update_user_profile(db, body, current_user)
+    user = await update_user_profile(db, body, current_user)
     append_audit(
         db,
         entity_type="USER",
@@ -51,19 +51,19 @@ def update_current_user(
         after_state={"full_name": user.full_name, "phone": user.phone, "bio": user.bio},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return user_me_payload(user)
 
 
 @router.patch("/me/role")
-def select_role(
+async def select_role(
     body: RoleSelectRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     before = {"role": current_user.role}
-    user = select_user_role(db, body.role, current_user)
+    user = await select_user_role(db, body.role, current_user)
     append_audit(
         db,
         entity_type="USER",
@@ -74,7 +74,7 @@ def select_role(
         after_state={"role": user.role},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return user_me_payload(user)
 
 
@@ -92,13 +92,13 @@ def presign_avatar(
 
 
 @router.post("/me/avatar/confirm")
-def confirm_avatar_upload(
+async def confirm_avatar_upload(
     body: AvatarConfirmRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    user = confirm_avatar(db, body, current_user)
+    user = await confirm_avatar(db, body, current_user)
     append_audit(
         db,
         entity_type="USER",
@@ -108,5 +108,5 @@ def confirm_avatar_upload(
         after_state={"avatar_key": user.avatar_key},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return user_me_payload(user)

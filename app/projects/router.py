@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
 from app.core.database import get_db
@@ -22,25 +22,25 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.post("", response_model=ProjectWithApplicationOut, status_code=201)
-def create_project_endpoint(
+async def create_project_endpoint(
     project: ProjectCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    new_project, loan_app = create_project(db, project, current_user)
+    new_project, loan_app = await create_project(db, project, current_user)
     out = ProjectWithApplicationOut.model_validate(new_project)
     if loan_app is not None:
         out.loan_application = ProjectLoanApplicationOut.model_validate(loan_app)
-    db.commit()
+    await db.commit()
     return out
 
 
 @router.get("", response_model=List[ProjectWithApplicationOut])
-def list_my_projects(
-    db: Session = Depends(get_db),
+async def list_my_projects(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    projects = get_my_projects(db, current_user)
+    projects = await get_my_projects(db, current_user)
     results = []
     for project in projects:
         out = ProjectWithApplicationOut.model_validate(project)
@@ -53,10 +53,8 @@ def list_my_projects(
 
 
 @router.get("/public", response_model=List[ProjectOut])
-def list_projects(
-    db: Session = Depends(get_db),
+async def list_projects(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return display_projects(db, current_user)
-
-
+    return await display_projects(db, current_user)

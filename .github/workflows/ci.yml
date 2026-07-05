@@ -75,7 +75,9 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql+psycopg2://test_user:test_password@localhost:5432/test_db
+      # No job-level DATABASE_URL: Alembic (sync psycopg2) and the app/tests
+      # (async asyncpg, HANDOFF-02 Fix A) need different drivers, so each is
+      # set per-step below instead of forcing one URL for both.
       SECRET_KEY: dummy_secret_key_for_testing
       DEBUG: True
 
@@ -95,7 +97,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Alembic migrations to head
+        env:
+          DATABASE_URL: postgresql+psycopg2://test_user:test_password@localhost:5432/test_db
         run: alembic upgrade head
 
       - name: Run test suite
+        env:
+          DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/test_db
         run: pytest -q

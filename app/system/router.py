@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.system import service
@@ -13,17 +13,17 @@ require_system_admin = require_roles(Role.SYSTEM_ADMIN)
 
 
 @router.get("/maintenance", response_model=MaintenanceStatus)
-def get_maintenance(db: Session = Depends(get_db)):
+async def get_maintenance(db: AsyncSession = Depends(get_db)):
     """Public: lets the frontend show a maintenance banner / gate login."""
-    return service.get_maintenance(db)
+    return await service.get_maintenance(db)
 
 
 @router.put("/maintenance", response_model=MaintenanceState)
-def set_maintenance(
+async def set_maintenance(
     body: MaintenanceUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_system_admin),
 ):
-    return service.set_maintenance(
+    return await service.set_maintenance(
         db, enabled=body.enabled, message=body.message, actor_id=current_user.id
     )

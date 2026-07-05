@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.users.models import Role, User
@@ -42,7 +43,7 @@ def user_me_payload(user: User) -> dict:
     }
 
 
-def update_user_profile(db: Session, body: UserUpdateRequest, current_user: User) -> User:
+async def update_user_profile(db: AsyncSession, body: UserUpdateRequest, current_user: User) -> User:
     # PATCH semantics: only touch fields the client actually sent. Sending an
     # explicit null clears the field; omitting it leaves the value unchanged.
     data = body.model_dump(exclude_unset=True)
@@ -50,11 +51,10 @@ def update_user_profile(db: Session, body: UserUpdateRequest, current_user: User
     if "phone" in data:
         phone = data["phone"]
         if phone is not None:
-            clash = (
-                db.query(User)
-                .filter(User.phone == phone, User.id != current_user.id)
-                .first()
+            result = await db.execute(
+                select(User).where(User.phone == phone, User.id != current_user.id)
             )
+            clash = result.scalar_one_or_none()
             if clash:
                 raise HTTPException(status_code=400, detail="Phone number already registered")
         current_user.phone = phone
@@ -66,11 +66,11 @@ def update_user_profile(db: Session, body: UserUpdateRequest, current_user: User
         current_user.bio = data["bio"]
 
     db.add(current_user)
-    db.flush()
+    await db.flush()
     return current_user
 
 
-def select_user_role(db: Session, role: Role, current_user: User) -> User:
+async def select_user_role(db: AsyncSession, role: Role, current_user: User) -> User:
     # One-time selection: once a role is set it can't be changed here, which
     # prevents a user from later switching into a different role on their own.
     if current_user.role:
@@ -80,7 +80,7 @@ def select_user_role(db: Session, role: Role, current_user: User) -> User:
         )
     current_user.role = role.value
     db.add(current_user)
-    db.flush()
+    await db.flush()
     return current_user
 
 
@@ -108,7 +108,7 @@ def create_avatar_presign(body: AvatarPresignRequest, current_user: User) -> tup
     return file_key, upload_url, settings.R2_PRESIGN_EXPIRE_SECONDS
 
 
-def confirm_avatar(db: Session, body: AvatarConfirmRequest, current_user: User) -> User:
+async def confirm_avatar(db: AsyncSession, body: AvatarConfirmRequest, current_user: User) -> User:
     # The client never picks an arbitrary key: it must be the one we issued for
     # this user, so a caller cannot point their avatar at someone else's object.
     expected_prefix = f"user/{current_user.id}/avatar."
@@ -128,5 +128,5 @@ def confirm_avatar(db: Session, body: AvatarConfirmRequest, current_user: User) 
 
     current_user.avatar_key = body.file_key
     db.add(current_user)
-    db.flush()
+    await db.flush()
     return current_user

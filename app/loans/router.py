@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.loans.schemas import LoanApplicationCreate, LoanApplicationOut
@@ -16,13 +16,13 @@ require_sme = require_roles(Role.SME)
 
 
 @router.post("/applications", response_model=LoanApplicationOut, status_code=201)
-def create_loan_application(
+async def create_loan_application(
     body: LoanApplicationCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    row = create_application(db, body, current_user)
+    row = await create_application(db, body, current_user)
     append_audit(
         db,
         entity_type="LOAN_APPLICATION",
@@ -32,18 +32,18 @@ def create_loan_application(
         after_state={"project_id": str(row.project_id), "status": row.status},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return row
 
 
 @router.post("/applications/{application_id}/submit", response_model=LoanApplicationOut)
-def submit_loan_application(
+async def submit_loan_application(
     application_id: UUID,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_sme),
 ):
-    row = submit_application(db, application_id, current_user)
+    row = await submit_application(db, application_id, current_user)
     append_audit(
         db,
         entity_type="LOAN_APPLICATION",
@@ -53,5 +53,5 @@ def submit_loan_application(
         after_state={"status": row.status},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return row

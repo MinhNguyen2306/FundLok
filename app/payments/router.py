@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.payments.schemas import DisbursementCreate, DisbursementOut, RepaymentCreate, RepaymentOut, DistributionOut
@@ -14,14 +14,14 @@ require_admin = require_roles(Role.ADMIN)
 
 
 @router.post("/disbursements", response_model=DisbursementOut, status_code=201)
-def post_disbursement(
+async def post_disbursement(
     body: DisbursementCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    entry, is_new = record_disbursement(
+    entry, is_new = await record_disbursement(
         db,
         contract_id=body.contract_id,
         bank_account=body.bank_account,
@@ -39,19 +39,19 @@ def post_disbursement(
             after_state={"amount": str(body.amount), "contract_id": str(body.contract_id)},
             ip_address=request.client.host if request.client else None,
         )
-    db.commit()
+    await db.commit()
     return DisbursementOut(disbursement_id=entry.id, status="RECORDED")
 
 
 @router.post("/repayments", response_model=RepaymentOut, status_code=201)
-def post_repayment(
+async def post_repayment(
     body: RepaymentCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    rep, dists, is_new = record_repayment(
+    rep, dists, is_new = await record_repayment(
         db,
         contract_id=body.contract_id,
         amount=body.amount,
@@ -70,6 +70,6 @@ def post_repayment(
             after_state={"amount": str(body.amount), "distributions": len(dists)},
             ip_address=request.client.host if request.client else None,
         )
-    db.commit()
+    await db.commit()
     balances = [DistributionOut(ledger_entry_id=d.id, amount=d.amount) for d in dists]
     return RepaymentOut(repayment_id=rep.id, balances=balances)

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.market.schemas import ListingCreate, ListingOut, OrderCreate, OrderOut
@@ -17,13 +17,13 @@ require_investor = require_roles(Role.INVESTOR)
 
 
 @router.post("/listings", response_model=ListingOut, status_code=201)
-def post_listing(
+async def post_listing(
     body: ListingCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    lst = create_listing(db, body.contract_id, body.target_amount, body.min_ticket)
+    lst = await create_listing(db, body.contract_id, body.target_amount, body.min_ticket)
     append_audit(
         db,
         entity_type="LISTING",
@@ -33,20 +33,20 @@ def post_listing(
         after_state={"contract_id": str(lst.contract_id), "status": lst.status},
         ip_address=request.client.host if request.client else None,
     )
-    db.commit()
+    await db.commit()
     return lst
 
 
 @router.post("/listings/{listing_id}/orders", response_model=OrderOut, status_code=201)
-def post_order(
+async def post_order(
     listing_id: UUID,
     body: OrderCreate,
     request: Request,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_investor),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    order, is_new = place_order(
+    order, is_new = await place_order(
         db,
         listing_id,
         current_user.id,
@@ -64,5 +64,5 @@ def post_order(
             after_state={"amount": str(order.amount), "status": order.status},
             ip_address=request.client.host if request.client else None,
         )
-    db.commit()
+    await db.commit()
     return order

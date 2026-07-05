@@ -58,7 +58,13 @@ def test_selectable_roles_constant_excludes_privileged():
 # --------------------------------------------------------------------------- #
 
 class _FakeDB:
-    """Minimal stand-in for a SQLAlchemy session for these handlers."""
+    """Minimal stand-in for an AsyncSession for these handlers.
+
+    HANDOFF-02 Fix A note: app/users/service.py now does `await db.flush()`
+    and the router does `await db.commit()`, so flush/commit must be
+    coroutines here too (db.add() itself is sync even on a real AsyncSession,
+    so that one stays a plain method).
+    """
 
     def __init__(self):
         self.added = []
@@ -68,10 +74,10 @@ class _FakeDB:
     def add(self, obj):
         self.added.append(obj)
 
-    def flush(self):
+    async def flush(self):
         self.flushed = True
 
-    def commit(self):
+    async def commit(self):
         self.committed = True
 
 
@@ -79,17 +85,17 @@ def _user(role=None):
     return User(id=uuid.uuid4(), email="u@example.com", role=role, status="ACTIVE")
 
 
-def test_select_role_sets_role_when_unset():
+async def test_select_role_sets_role_when_unset():
     db, user = _FakeDB(), _user(role=None)
-    out = select_user_role(db, Role.INVESTOR, user)
+    out = await select_user_role(db, Role.INVESTOR, user)
     assert out.role == "INVESTOR"
     assert db.flushed is True
 
 
-def test_select_role_conflicts_when_already_set():
+async def test_select_role_conflicts_when_already_set():
     db, user = _FakeDB(), _user(role="SME")
     with pytest.raises(HTTPException) as exc:
-        select_user_role(db, Role.INVESTOR, user)
+        await select_user_role(db, Role.INVESTOR, user)
     assert exc.value.status_code == 409
     assert user.role == "SME"  # unchanged
 

@@ -3,17 +3,19 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.lending.models import LoanApplication, ScoreRun
 
 
-def start_score_run(
-    db: Session,
+async def start_score_run(
+    db: AsyncSession,
     application_id: UUID,
     mode: str | None,
 ) -> ScoreRun:
-    app = db.query(LoanApplication).filter(LoanApplication.id == application_id).first()
+    result = await db.execute(select(LoanApplication).where(LoanApplication.id == application_id))
+    app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
     if app.status != "SUBMITTED":
@@ -23,7 +25,7 @@ def start_score_run(
         )
     sr = ScoreRun(application_id=application_id, status="RUNNING")
     db.add(sr)
-    db.flush()
+    await db.flush()
     # MVP: complete synchronously
     app.status = "UNDER_REVIEW"
     sr.status = "READY"
@@ -33,13 +35,14 @@ def start_score_run(
     sr.factor_results = {"mock": True}
     db.add(app)
     db.add(sr)
-    db.flush()
-    db.refresh(sr)
+    await db.flush()
+    await db.refresh(sr)
     return sr
 
 
-def approve_score_run(db: Session, score_run_id: UUID) -> tuple[ScoreRun, bool]:
-    sr = db.query(ScoreRun).filter(ScoreRun.id == score_run_id).first()
+async def approve_score_run(db: AsyncSession, score_run_id: UUID) -> tuple[ScoreRun, bool]:
+    result = await db.execute(select(ScoreRun).where(ScoreRun.id == score_run_id))
+    sr = result.scalar_one_or_none()
     if not sr:
         raise HTTPException(status_code=404, detail="Score run not found")
     if sr.status == "LOCKED":
@@ -49,6 +52,6 @@ def approve_score_run(db: Session, score_run_id: UUID) -> tuple[ScoreRun, bool]:
     sr.status = "LOCKED"
     sr.locked_at = datetime.now(timezone.utc)
     db.add(sr)
-    db.flush()
-    db.refresh(sr)
+    await db.flush()
+    await db.refresh(sr)
     return sr, True

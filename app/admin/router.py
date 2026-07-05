@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin import service
 from app.admin.schemas import AdminMode, AdminOverview, AuditLogOut
@@ -16,8 +16,8 @@ require_admin = require_roles(Role.ADMIN, Role.SYSTEM_ADMIN)
 
 
 @router.get("/overview", response_model=AdminOverview)
-def get_overview(
-    db: Session = Depends(get_db),
+async def get_overview(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
     mode: AdminMode = Query(default=AdminMode.users),
     page: int = Query(default=1, ge=1),
@@ -27,7 +27,7 @@ def get_overview(
     role: str | None = Query(default=None, description="users mode only"),
     industry: str | None = Query(default=None, description="projects mode only"),
 ):
-    return service.get_overview(
+    return await service.get_overview(
         db,
         mode=mode,
         page=page,
@@ -40,8 +40,8 @@ def get_overview(
 
 
 @router.get("/audit-logs", response_model=list[AuditLogOut])
-def get_audit_logs(
-    db: Session = Depends(get_db),
+async def get_audit_logs(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
     entity_type: str | None = Query(default=None),
     entity_id: UUID | None = Query(default=None),
@@ -50,7 +50,7 @@ def get_audit_logs(
     created_before: datetime | None = Query(default=None),
     limit: int = Query(default=100, le=500),
 ):
-    return service.list_audit_logs(
+    return await service.list_audit_logs(
         db,
         entity_type=entity_type,
         entity_id=entity_id,

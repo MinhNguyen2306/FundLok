@@ -9,6 +9,14 @@ Flow (https://docs.didit.me/sessions-api/overview):
   2. user completes the flow in Didit's hosted UI
   3. Didit calls our webhook (handle_webhook) and/or the FE polls (sync_verification)
   4. we store the terminal status + full decision payload
+
+NOTE (HANDOFF-02 Fix A): the DB access in this module is now async, but
+app/verification/client.py's Didit HTTP calls (create_session,
+retrieve_decision) are still a *sync* httpx.Client -- out of scope for this
+refactor (Fix A only covers the DB layer per the handoff). That means
+start_verification/sync_verification still block the event loop for the
+duration of the Didit call. Flagged in the PR description as a follow-up,
+not fixed here.
 """
 from __future__ import annotations
 
@@ -18,7 +26,8 @@ import json
 import time
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.users.models import User
@@ -56,22 +65,22 @@ def _workflow_for(verification_type: str) -> str | None:
     return settings.DIDIT_WORKFLOW_ID
 
 
-def _latest_for_user(
-    db: Session, user_id, verification_type: str
+async def _latest_for_user(
+    db: AsyncSession, user_id, verification_type: str
 ) -> Verification | None:
-    return (
-        db.query(Verification)
-        .filter(
+    result = await db.execute(
+        select(Verification)
+        .where(
             Verification.user_id == user_id,
             Verification.verification_type == verification_type,
         )
         .order_by(Verification.created_at.desc())
-        .first()
     )
+    return result.scalars().first()
 
 
-def start_verification(
-    db: Session,
+async def start_verification(
+    db: AsyncSession,
     user: User,
     *,
     verification_type: str = "KYC",
@@ -89,7 +98,7 @@ def start_verification(
     `language` is the caller's preferred locale (e.g. from the frontend); it
     falls back to the DIDIT_LANGUAGE env default when not provided.
     """
-    existing = _latest_for_user(db, user.id, verification_type)
+    existing = await _latest_for_user(db, user.id, verification_type)
     if existing is not None and not existing.is_terminal:
         return existing
 
@@ -115,24 +124,24 @@ def start_verification(
         status=data.get("status") or "Not Started",
     )
     db.add(verification)
-    db.flush()
+    await db.flush()
     return verification
 
 
-def sync_verification(db: Session, verification: Verification) -> Verification:
+async def sync_verification(db: AsyncSession, verification: Verification) -> Verification:
     """Pull the latest decision from Didit and persist status + decision."""
     data = client.retrieve_decision(verification.session_id)
     verification.status = data.get("status") or verification.status
     verification.decision = data
     db.add(verification)
-    db.flush()
+    await db.flush()
     return verification
 
 
-def get_status(
-    db: Session, user: User, verification_type: str = "KYC"
+async def get_status(
+    db: AsyncSession, user: User, verification_type: str = "KYC"
 ) -> Verification | None:
-    return _latest_for_user(db, user.id, verification_type)
+    return await _latest_for_user(db, user.id, verification_type)
 
 
 # --------------------------------------------------------------------------- #
@@ -241,7 +250,7 @@ def verify_webhook(raw_body: bytes, headers: dict[str, str]) -> bool:
     return False
 
 
-def already_processed(db: Session, event_id: str | None) -> bool:
+async def already_processed(db: AsyncSession, event_id: str | None) -> bool:
     """True if this Didit delivery (event_id) was already applied.
 
     Didit redelivers on 5xx/404, so we dedupe on the per-delivery event_id to
@@ -249,15 +258,15 @@ def already_processed(db: Session, event_id: str | None) -> bool:
     """
     if not event_id:
         return False
-    return (
-        db.query(VerificationWebhookEvent.event_id)
-        .filter(VerificationWebhookEvent.event_id == event_id)
-        .first()
-        is not None
+    result = await db.execute(
+        select(VerificationWebhookEvent.event_id).where(
+            VerificationWebhookEvent.event_id == event_id
+        )
     )
+    return result.scalar_one_or_none() is not None
 
 
-def handle_webhook(db: Session, payload: dict[str, Any]) -> Verification | None:
+async def handle_webhook(db: AsyncSession, payload: dict[str, Any]) -> Verification | None:
     """Apply a verified webhook payload to the matching verification row.
 
     The webhook is treated as a trigger: we persist the envelope status and
@@ -273,11 +282,8 @@ def handle_webhook(db: Session, payload: dict[str, Any]) -> Verification | None:
     if event_id:
         db.add(VerificationWebhookEvent(event_id=str(event_id), session_id=session_id))
 
-    verification = (
-        db.query(Verification)
-        .filter(Verification.session_id == session_id)
-        .first()
-    )
+    result = await db.execute(select(Verification).where(Verification.session_id == session_id))
+    verification = result.scalar_one_or_none()
     if verification is None:
         return None
 
@@ -289,5 +295,5 @@ def handle_webhook(db: Session, payload: dict[str, Any]) -> Verification | None:
     if decision is not None:
         verification.decision = decision
     db.add(verification)
-    db.flush()
+    await db.flush()
     return verification

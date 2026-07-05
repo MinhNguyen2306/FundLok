@@ -3,7 +3,8 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.lending.kyc import project_has_verified_kyc
 from app.lending.models import Contract, Holding, Listing, LoanApplication, Order
@@ -20,8 +21,9 @@ def _dec(value: object) -> Decimal:
     return Decimal(str(value))
 
 
-def _recompute_holding_shares(db: Session, contract_id: UUID) -> None:
-    hs = db.query(Holding).filter(Holding.contract_id == contract_id).all()
+async def _recompute_holding_shares(db: AsyncSession, contract_id: UUID) -> None:
+    result = await db.execute(select(Holding).where(Holding.contract_id == contract_id))
+    hs = result.scalars().all()
     total = sum((_dec(h.principal) for h in hs), Decimal("0"))
     if total <= 0:
         return
@@ -31,8 +33,9 @@ def _recompute_holding_shares(db: Session, contract_id: UUID) -> None:
         db.add(h)
 
 
-def create_listing(db: Session, contract_id: UUID, target_amount: Decimal, min_ticket: Decimal) -> Listing:
-    c = db.query(Contract).filter(Contract.id == contract_id).first()
+async def create_listing(db: AsyncSession, contract_id: UUID, target_amount: Decimal, min_ticket: Decimal) -> Listing:
+    result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    c = result.scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Contract not found")
     if c.status != "ACTIVE_PENDING_FUNDING":
@@ -40,15 +43,17 @@ def create_listing(db: Session, contract_id: UUID, target_amount: Decimal, min_t
             status_code=400,
             detail="Contract must be ACTIVE_PENDING_FUNDING to list",
         )
-    app = db.query(LoanApplication).filter(LoanApplication.id == c.application_id).first()
+    result = await db.execute(select(LoanApplication).where(LoanApplication.id == c.application_id))
+    app = result.scalar_one_or_none()
     if not app:
         raise HTTPException(status_code=400, detail="Contract has no application")
-    if not project_has_verified_kyc(db, app.project_id):
+    if not await project_has_verified_kyc(db, app.project_id):
         raise HTTPException(
             status_code=400,
             detail="Project must have all KYC documents APPROVED before listing",
         )
-    existing = db.query(Listing).filter(Listing.contract_id == contract_id).first()
+    result = await db.execute(select(Listing).where(Listing.contract_id == contract_id))
+    existing = result.scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=400, detail="Listing already exists for this contract")
     if min_ticket <= 0:
@@ -63,13 +68,13 @@ def create_listing(db: Session, contract_id: UUID, target_amount: Decimal, min_t
         open_at=now,
     )
     db.add(lst)
-    db.flush()
-    db.refresh(lst)
+    await db.flush()
+    await db.refresh(lst)
     return lst
 
 
-def place_order(
-    db: Session,
+async def place_order(
+    db: AsyncSession,
     listing_id: UUID,
     investor_id: UUID,
     amount: Decimal,
@@ -79,7 +84,8 @@ def place_order(
     if not ack_risk_disclosure:
         raise HTTPException(status_code=400, detail="Risk disclosure must be acknowledged")
     if idempotency_key:
-        existing = db.query(Order).filter(Order.idempotency_key == idempotency_key).first()
+        result = await db.execute(select(Order).where(Order.idempotency_key == idempotency_key))
+        existing = result.scalar_one_or_none()
         if existing:
             if existing.listing_id != listing_id:
                 raise HTTPException(
@@ -88,7 +94,8 @@ def place_order(
                 )
             return existing, False
 
-    lst = db.query(Listing).filter(Listing.id == listing_id).first()
+    result = await db.execute(select(Listing).where(Listing.id == listing_id))
+    lst = result.scalar_one_or_none()
     if not lst:
         raise HTTPException(status_code=404, detail="Listing not found")
     if lst.status != "OPEN":
@@ -115,19 +122,19 @@ def place_order(
         idempotency_key=idempotency_key,
     )
     db.add(order)
-    db.flush()
+    await db.flush()
 
     new_listing_funded = funded_amt + amount
     lst.funded_amount = new_listing_funded
-    c = db.query(Contract).filter(Contract.id == lst.contract_id).first()
+    result = await db.execute(select(Contract).where(Contract.id == lst.contract_id))
+    c = result.scalar_one_or_none()
     if c:
         c.funded_amount = _dec(c.funded_amount) + amount
 
-    holding = (
-        db.query(Holding)
-        .filter(Holding.contract_id == lst.contract_id, Holding.investor_id == investor_id)
-        .first()
+    result = await db.execute(
+        select(Holding).where(Holding.contract_id == lst.contract_id, Holding.investor_id == investor_id)
     )
+    holding = result.scalar_one_or_none()
     if holding:
         holding.principal = _dec(holding.principal) + amount
         holding.order_id = order.id
@@ -149,8 +156,8 @@ def place_order(
     db.add(lst)
     if c:
         db.add(c)
-    db.flush()
-    _recompute_holding_shares(db, lst.contract_id)
-    db.flush()
-    db.refresh(order)
+    await db.flush()
+    await _recompute_holding_shares(db, lst.contract_id)
+    await db.flush()
+    await db.refresh(order)
     return order, True

@@ -1,10 +1,12 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID as PyUUID
 
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.auth.schemas import TokenData
@@ -15,21 +17,32 @@ http_bearer = HTTPBearer(auto_error=False)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """Bug found + fixed under HANDOFF-02 Fix B: this previously encoded only
+    the caller's claims plus an integer `exp`. `exp` has one-second
+    resolution, so two tokens minted for the same user+claims within the same
+    wall-clock second (e.g. register -> immediately login, or refresh called
+    twice back-to-back) were byte-for-byte identical JWTs. That was invisible
+    before Fix B, since stateless refresh tokens were never persisted or
+    deduped -- but refresh_tokens.token_hash is UNIQUE, so identical tokens
+    now fail to insert with an IntegrityError. A `jti` (JWT ID) claim
+    guarantees every issued token is unique regardless of timing, which is
+    the standard fix for this class of bug.
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     # Integer exp avoids python-jose / client decode edge cases with datetime objects.
-    to_encode.update({"exp": int(expire.timestamp())})
+    to_encode.update({"exp": int(expire.timestamp()), "jti": str(uuid.uuid4())})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
-def get_current_user(
+async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,7 +77,8 @@ def get_current_user(
         uid = PyUUID(str(token_data.user_id))
     except (ValueError, TypeError):
         raise credentials_exception
-    user = db.query(User).filter(User.id == uid).first()
+    result = await db.execute(select(User).where(User.id == uid))
+    user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
     return user

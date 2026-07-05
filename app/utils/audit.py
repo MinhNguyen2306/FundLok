@@ -1,13 +1,13 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.lending.models import AuditLog
 
 
 def append_audit(
-    db: Session,
+    db: AsyncSession,
     *,
     entity_type: str,
     entity_id: UUID | None,
