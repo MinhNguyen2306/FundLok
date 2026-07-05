@@ -63,7 +63,7 @@ from app.core.base import Base  # noqa: E402
 from app.core.database import engine, get_db  # noqa: E402
 from app.lending.models import Document  # noqa: E402
 from app.main import app  # noqa: E402
-from app.users.models import User  # noqa: E402
+from app.users.models import RefreshToken, User  # noqa: E402
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 # Alembic intentionally stays on a sync driver (HANDOFF-02 Fix A) -- derive
@@ -439,3 +439,20 @@ def funded_contract(open_listing, place_order, make_user):
         return setup
 
     return _setup
+
+
+@pytest.fixture
+def get_refresh_token_row(db_session):
+    """HANDOFF-02 Fix B test helper: look up a user's RefreshToken row(s)
+    directly, to assert on hashing/revocation state that isn't visible via
+    the API surface."""
+
+    async def _get(user_id: str, *, token_hash: str | None = None):
+        stmt = select(RefreshToken).where(RefreshToken.user_id == user_id)
+        if token_hash is not None:
+            stmt = stmt.where(RefreshToken.token_hash == token_hash)
+        stmt = stmt.order_by(RefreshToken.created_at.desc())
+        result = await db_session.execute(stmt)
+        return result.scalars().all()
+
+    return _get

@@ -1,4 +1,5 @@
-from datetime import timedelta
+import hashlib
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from jose import JWTError, jwt
@@ -12,7 +13,7 @@ from app.auth.schemas import (
     ResetPasswordRequest,
     UserCreate,
 )
-from app.users.models import User
+from app.users.models import RefreshToken, User
 from app.utils.password import hash_password, verify_password
 from app.utils.jwt import (
     create_access_token,
@@ -34,14 +35,26 @@ async def authenticate_user(db: AsyncSession, email: str, password: str):
     return user
 
 
-async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
-    """Issue an access/refresh JWT pair.
+def hash_refresh_token(token: str) -> str:
+    """SHA-256 of the raw refresh JWT (HANDOFF-02 Fix B).
 
-    Stateless (HANDOFF-01 characterized behavior, preserved as-is by Fix A):
-    refresh tokens are signed JWTs only, never persisted -- there is no
-    server-side revocation yet. `db` is accepted (and unused) purely to keep
-    this signature stable across HANDOFF-02 Fix B, which adds persistence
-    here in a later commit.
+    Deliberately NOT the argon2 hasher in app/utils/password.py: a refresh
+    token is already a long, high-entropy signed JWT, not a low-entropy human
+    password, so there's nothing for a slow/memory-hard hash to brute-force
+    protect against -- it would only add needless CPU/memory cost on every
+    single /auth/refresh call. A fast, deterministic hash for DB lookup is
+    the standard approach for opaque bearer tokens (this is how GitHub/Auth0
+    store API keys and session tokens for revocation checks).
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
+    """Issue an access/refresh JWT pair and persist the refresh token (hashed)
+    in `refresh_tokens` so it can be looked up, revoked, and rotated.
+
+    Only stages the RefreshToken row via db.add(); the caller controls the
+    transaction boundary (commit), matching the rest of this module.
     """
     uid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
 
@@ -50,21 +63,32 @@ async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
         data={"sub": str(uid)}, expires_delta=access_token_expires
     )
 
+    refresh_expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     refresh_token = create_access_token(
         data={"sub": str(uid), "typ": "refresh"},
-        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_delta=refresh_expires_delta,
+    )
+    expires_at = datetime.now(timezone.utc) + refresh_expires_delta
+    db.add(
+        RefreshToken(
+            user_id=uid,
+            token_hash=hash_refresh_token(refresh_token),
+            expires_at=expires_at,
+        )
     )
 
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
 async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
-    """Verify a refresh JWT and issue a new pair.
+    """Verify + rotate a refresh token (HANDOFF-02 Fix B: stateful, revocable).
 
-    Stateless (HANDOFF-01 characterized behavior): only the JWT
-    signature/expiry/claims are checked -- there is no revocation list, so a
-    still-valid (unexpired) refresh token can be used to mint new pairs
-    indefinitely. HANDOFF-02 Fix B changes this in a later commit.
+    JWT signature/expiry is checked first (cheap, no DB hit for garbage
+    input); the DB is then the source of truth for revocation -- missing,
+    already-revoked, or expired rows are all rejected. On success the
+    presented token is revoked and a new pair is issued and persisted, which
+    is proper rotation with reuse detection: a revoked token can never be
+    used again, including by an attacker who captured it before rotation.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -84,7 +108,35 @@ async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
     except JWTError:
         raise credentials_exception
 
+    token_hash = hash_refresh_token(refresh_token)
+    result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    stored = result.scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    if stored is None or stored.revoked_at is not None or stored.expires_at < now:
+        raise credentials_exception
+
+    stored.revoked_at = now
+    db.add(stored)
+
     return await create_token_pair(db, user_id)
+
+
+async def logout(db: AsyncSession, refresh_token: str | None) -> dict:
+    """Revoke the presented refresh token server-side (HANDOFF-02 Fix B).
+
+    Forgiving by design: a missing, already-revoked, or unrecognized token
+    still returns success -- logout should never fail just because the
+    client's cookie was already gone or stale.
+    """
+    if refresh_token:
+        token_hash = hash_refresh_token(refresh_token)
+        result = await db.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+        stored = result.scalar_one_or_none()
+        if stored is not None and stored.revoked_at is None:
+            stored.revoked_at = datetime.now(timezone.utc)
+            db.add(stored)
+    return {"status": "success", "message": "Logged out successfully"}
 
 
 def _parse_user_id(user_id: str) -> UUID:

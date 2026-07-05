@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID as PyUUID
 
@@ -16,13 +17,24 @@ http_bearer = HTTPBearer(auto_error=False)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    """Bug found + fixed under HANDOFF-02 Fix B: this previously encoded only
+    the caller's claims plus an integer `exp`. `exp` has one-second
+    resolution, so two tokens minted for the same user+claims within the same
+    wall-clock second (e.g. register -> immediately login, or refresh called
+    twice back-to-back) were byte-for-byte identical JWTs. That was invisible
+    before Fix B, since stateless refresh tokens were never persisted or
+    deduped -- but refresh_tokens.token_hash is UNIQUE, so identical tokens
+    now fail to insert with an IntegrityError. A `jti` (JWT ID) claim
+    guarantees every issued token is unique regardless of timing, which is
+    the standard fix for this class of bug.
+    """
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     # Integer exp avoids python-jose / client decode edge cases with datetime objects.
-    to_encode.update({"exp": int(expire.timestamp())})
+    to_encode.update({"exp": int(expire.timestamp()), "jti": str(uuid.uuid4())})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 

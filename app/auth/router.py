@@ -63,18 +63,22 @@ async def refresh_tokens(request: Request, response: Response, body: RefreshRequ
         )
 
     tokens = await service.refresh_token_pair(db, refresh_token)
+    await db.commit()
     _set_auth_cookies(response, tokens)
     return tokens
 
 
 @router.post("/logout")
-async def logout(response: Response):
-    # Stateless (HANDOFF-01 characterized behavior, preserved by Fix A):
-    # nothing to revoke server-side yet, just clear the cookies. HANDOFF-02
-    # Fix B changes this in a later commit.
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # HANDOFF-02 Fix B: revoke the presented refresh token server-side, not
+    # just clear the cookie -- a stolen token no longer stays valid until
+    # natural expiry after the legitimate user logs out.
+    refresh_token = request.cookies.get("refresh_token")
+    result = await service.logout(db, refresh_token)
+    await db.commit()
     response.delete_cookie(key="access_token", httponly=True, samesite="lax")
     response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
-    return {"status": "success", "message": "Logged out successfully"}
+    return result
 
 
 @router.post("/forgot-password")
