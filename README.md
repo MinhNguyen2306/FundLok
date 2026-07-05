@@ -141,7 +141,7 @@ http://127.0.0.1:8000
 Swagger UI:
 
 ```bash
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/docs 
 ```
 
 ### Optional: seed reference data
