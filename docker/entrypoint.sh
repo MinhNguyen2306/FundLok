@@ -14,22 +14,22 @@
 # on $PORT ("failed to start and listen on port 8080").
 set -e
 
-# Take whatever DATABASE_URL the deploy provides (any driver, any query) and
-# reduce it to the bare connection (creds + host + db, no ?query).
+# Reduce DATABASE_URL to the bare connection (creds + host + db), discarding BOTH
+# the driver and ANY query string. This makes the entrypoint robust to whatever
+# format the secret is in — psycopg2, asyncpg, bare, with or without ssl params.
 RAW_URL="$DATABASE_URL"
-BARE_URL=$(printf '%s' "$RAW_URL" | sed -E 's#^postgresql\+(asyncpg|psycopg2)#postgresql#')
-BASE_NOQUERY=$(printf '%s' "$BARE_URL" | sed -E 's#\?.*$##')
+NODRIVER=$(printf '%s' "$RAW_URL" | sed -E 's#^postgresql(\+[a-z0-9_]+)?://#postgresql://#')
+BASE_NOQUERY=$(printf '%s' "$NODRIVER" | sed -E 's#\?.*$##')
 CONN=$(printf '%s' "$BASE_NOQUERY" | sed -E 's#^postgresql://##')
 
-# Alembic: sync psycopg2. libpq (psycopg2) understands the original query as-is
-# (sslmode, channel_binding, ...), so keep it and just force the sync driver.
-SYNC_URL=$(printf '%s' "$BARE_URL" | sed -E 's#^postgresql#postgresql+psycopg2#')
-
-# App: async asyncpg. asyncpg does NOT accept libpq params (sslmode/channel_binding)
-# — it uses ssl=... instead — and the Neon pooler (PgBouncer) needs prepared
-# statements disabled. Keeping sslmode here is why /health (no DB) passed but real
-# DB endpoints 500'd: asyncpg only connects on the first query. Rebuild the query
-# with asyncpg-native params.
+# Rebuild the correct URL for each tool from CONN, with driver-appropriate params.
+# We do NOT reuse the secret's query string, because sslmode/channel_binding are
+# libpq-only (psycopg2) and ssl/prepared_statement_cache_size are asyncpg-only —
+# feeding one tool the other's params is what breaks the deploy.
+#   Alembic → sync psycopg2 (libpq): sslmode=require
+#   App     → async asyncpg: ssl=require + pooler-safe prepared_statement_cache_size=0
+# (Neon always requires SSL, and this container only ever connects to Neon.)
+SYNC_URL="postgresql+psycopg2://${CONN}?sslmode=require"
 ASYNC_URL="postgresql+asyncpg://${CONN}?ssl=require&prepared_statement_cache_size=0"
 
 echo "[entrypoint] Running database migrations (alembic upgrade head)..."
