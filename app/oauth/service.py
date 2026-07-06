@@ -97,9 +97,9 @@ class OAuthProviderBase(ABC):
             phone=None,
             full_name=user_info.full_name,
             password_hash=token_urlsafe(32),
-            role="SME",
+            role=None,  # chosen later via /select-role, same as email/password signup
             status="ACTIVE",
-            email_verified= True,
+            email_verified=True,
         )
         db.add(user)
         await db.flush()
