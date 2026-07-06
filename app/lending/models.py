@@ -238,20 +238,12 @@ class Holding(Base):
     __table_args__ = (UniqueConstraint("contract_id", "investor_id", name="uq_holding_contract_investor"),)
 
 
-class LedgerEntry(Base):
-    __tablename__ = "ledger_entries"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    contract_id = Column(UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False)
-    type = Column(Text, nullable=False)
-    amount = Column(Numeric(15, 2), nullable=False)
-    reference = Column(Text)
-    occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
-    idempotency_key = Column(Text, unique=True, nullable=True)
-
-    contract = relationship("Contract", back_populates="ledger_entries")
+# LedgerEntry moved to app/ledger/models.py (double-entry foundation, ADR-003
+# custodial/ledger account model). Re-exported here so existing imports
+# (`from app.lending.models import LedgerEntry`) keep working; the
+# `Contract.ledger_entries` relationship above resolves it by class name
+# via the shared SQLAlchemy registry regardless of which module defines it.
+from app.ledger.models import LedgerEntry  # noqa: E402,F401
 
 
 class AuditLog(Base):

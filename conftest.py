@@ -157,9 +157,36 @@ async def db_session():
         # leftover implicit transaction/aborted state from whatever the test
         # did (e.g. a request that ended in an HTTPException).
         await session.rollback()
-        tables = [t.name for t in Base.metadata.sorted_tables if t.name != "alembic_version"]
+        # `custodial_accounts` is excluded alongside `alembic_version`: the
+        # ledger-foundation migration seeds exactly one scope='PLATFORM' row
+        # as fixed reference data (ADR-003), not per-test state -- truncating
+        # it here would silently delete that seed after the first test and
+        # break every subsequent resolve_custodial_account() call. Tables
+        # that reference it (ledger_accounts, ledger_entries, ...) are still
+        # truncated normally.
+        tables = [
+            t.name
+            for t in Base.metadata.sorted_tables
+            if t.name not in ("alembic_version", "custodial_accounts")
+        ]
         if tables:
             await session.execute(text(f'TRUNCATE TABLE {", ".join(tables)} RESTART IDENTITY CASCADE'))
+            # Excluding `custodial_accounts` from the TRUNCATE list above
+            # isn't sufficient on its own: `custodial_accounts.contract_id`
+            # is a FK to `contracts.id`, and Postgres's TRUNCATE ... CASCADE
+            # truncates *every* table with a FK into any table named in the
+            # statement -- so truncating `contracts` (correctly, per-test
+            # data) cascades into `custodial_accounts` too and wipes the
+            # seeded PLATFORM row regardless. Re-seed it idempotently so it
+            # survives every test, the same way the migration provisions it
+            # once for a real environment.
+            await session.execute(
+                text(
+                    "INSERT INTO custodial_accounts (scope, status) "
+                    "SELECT 'PLATFORM', 'ACTIVE' "
+                    "WHERE NOT EXISTS (SELECT 1 FROM custodial_accounts WHERE scope = 'PLATFORM')"
+                )
+            )
             await session.commit()
         await session.close()
 
