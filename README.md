@@ -144,7 +144,7 @@ Swagger UI:
 http://127.0.0.1:8000/docs
 ```
 
-### Optional: seed reference data
+### Optional: seed reference data 
 
 If you want sample data in the local database:
 
