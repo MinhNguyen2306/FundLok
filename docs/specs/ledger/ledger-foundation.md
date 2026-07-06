@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | ACCEPTED |
 | **Owner** | Edward |
 | **Implementer(s)** | Edward (backend) — implemented via Sonnet |
 | **Module** | `app/ledger/` (new module) |
-| **Version** | 0.2 |
+| **Version** | 1.0 |
 | **Date** | 2026-07-05 |
 | **Related ADR** | ADR-002 (omnibus/custodial), ADR-003 (omnibus-first, escrow seam) |
 | **Depends on** | Structural fixes (async DB layer) — merged |
@@ -230,3 +230,4 @@ Not applicable — ledger rows have no lifecycle status; they are immutable fact
 |---|---|---|---|
 | 0.1 | 2026-07-05 | Edward | Initial draft — double-entry evolution, custodial/ledger account model, immutability trigger, escrow seam per ADR-003 |
 | 0.2 | 2026-07-05 | Edward | Closed all 5 open questions; status → REVIEW. Confirmed header+multi-leg double-entry, SUSPENSE provisioned (no logic), escrow provisioning auto→ADMIN-gate, NOT NULL migration (no data), 1-borrower-to-many-lenders. |
+| 1.0 | 2026-07-05 | Edward | Reviewed and ACCEPTED — cleared for implementation. |
