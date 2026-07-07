@@ -53,12 +53,16 @@ Key carry-forwards:
 **Ownership is strict. Do not modify files outside your boundary without explicit agreement.**
 
 ### Edward (CTO) — Backend, Architecture, Compliance
-- `app/banking/` — Brankas API client, omnibus account service, webhook handlers
+- `app/banking/` — Brankas API client, omnibus account service, webhook handlers (see also `docs/specs/banking/account-linking-mock.md` — Brankas is not expected to happen; this module is mocked indefinitely pending a partner decision)
+- `app/verification/` — KYC/KYB identity verification (Didit client, session state, signed webhook)
 - `app/underwriting/` — ML grading engine (async)
+- `app/contracts/` — loan contract creation from a locked score run (final terms, funding target)
 - `app/repayment_schedule/` — amortization engine, early repayment tracking
 - `app/share_conversion/` — post-repayment share issuance
 - `app/compliance/` — Decree 94 reporting, exposure cap enforcement
 - `app/ledger/` — double-entry ledger, custodial/ledger accounts, balance-by-sum (see ADR-003, docs/specs/ledger/ledger-foundation.md)
+- `app/payments/` — disbursement/repayment posting (currently a stopgap shim over `app/ledger/`, not yet its own spec'd flow)
+- `app/system/` — platform/ops settings (e.g. maintenance mode)
 - `app/core/` — database session, config, async migration
 - `app/utils/` — shared utilities (jwt, rbac, audit, r2, password)
 - `alembic/` — all migrations
