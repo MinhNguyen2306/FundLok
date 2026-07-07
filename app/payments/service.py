@@ -193,20 +193,24 @@ async def record_repayment(
         )
     ]
 
-    # NOTE (adjacent-code observation, see PR description): distribution
-    # shares are principal-weighted and rounded to 2dp per holding, same as
-    # the pre-existing behavior this replaces. With a single holding (the
-    # only shape exercised by today's tests/fixtures) the share always
-    # equals the full repayment amount, so this always balances. With >1
-    # holding, rounding can leave the shares summing to a cent above/below
-    # `amount`, which the ledger's pass-through balance check on
-    # OMNIBUS_CASH would now reject where the old flat ledger would have
-    # silently accepted the drift. Flagged for the repayment-flow spec to
-    # resolve (e.g. allocate the rounding remainder to one leg) rather than
-    # fixed here, since this module is out of this spec's scope.
+    # Distribution shares are principal-weighted, rounded to 2dp per
+    # holding. Independently rounding each share can leave the sum a cent
+    # above/below `amount` (e.g. splitting 100.00 three ways by 33.33/33.33/
+    # 33.34 principal), which the ledger's pass-through balance check on
+    # OMNIBUS_CASH rejects. Fixed via largest-remainder-style absorption:
+    # every holding but the last gets its rounded proportional share, and
+    # the last (in a fixed, deterministic order) takes `amount` minus
+    # whatever was already allocated -- so the legs always sum to exactly
+    # `amount` regardless of rounding.
     if total_principal > 0 and amount > 0:
-        for holding in holdings:
-            share = (holding.principal / total_principal) * amount
+        ordered_holdings = sorted(holdings, key=lambda h: h.id)
+        allocated = Decimal("0")
+        for index, holding in enumerate(ordered_holdings):
+            if index == len(ordered_holdings) - 1:
+                share = amount - allocated
+            else:
+                share = ((holding.principal / total_principal) * amount).quantize(Decimal("0.01"))
+                allocated += share
             lender_account = await get_or_create_account(
                 db,
                 account_type="LENDER",
@@ -218,7 +222,7 @@ async def record_repayment(
                 LedgerLeg(
                     debit_account_id=omnibus_cash.id,
                     credit_account_id=lender_account.id,
-                    amount=share.quantize(Decimal("0.01")),
+                    amount=share,
                     type="DISTRIBUTION",
                     contract_id=contract_id,
                     reference=f"repayment:investor:{holding.investor_id}",
