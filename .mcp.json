@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fl-knowledge": {
+      "command": "tools/mcp-servers/fl-knowledge/.venv/bin/python",
+      "args": ["tools/mcp-servers/fl-knowledge/server.py"]
+    }
+  }
+}

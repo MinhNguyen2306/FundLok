@@ -1,7 +1,7 @@
 # FundLok — Claude Session Bootstrap
 
 > Read this file at the start of every session. It is the single source of truth for project context.
-> Last updated: July 2026 | Version: 1.1
+> Last updated: July 2026 | Version: 1.2
 
 ---
 
@@ -187,6 +187,8 @@ Order:            PENDING_PAYMENT → FILLED | CANCELLED | EXPIRED
 | ADR-002 | Omnibus/custodial account via Brankas | Accepted |
 | ADR-003 | Omnibus-first with escrow-compatible ledger seam | Accepted |
 | ADR-004 | Vietnam regulatory compliance (Decree 94 + Circular 64) | Draft |
+| ADR-005 | Permanent local dev environment + local knowledge MCP server | Accepted |
+| ADR-006 | fl-knowledge: BM25 → Pinecone + local embeddings | Accepted |
 
 Full ADRs in `docs/adr/`.
 
@@ -195,6 +197,14 @@ Full ADRs in `docs/adr/`.
 ## What Edward Does NOT Do
 
 Edward is CTO and backend/architecture owner. **Edward does not write UI code.** If a task involves React, CSS, component design, or anything rendered in a browser, it belongs to Phat. Do not suggest or generate frontend code in Edward's sessions.
+
+---
+
+## Local Dev Environment & Knowledge MCP
+
+**Standing local stack (ADR-005):** run the repo's `docker-compose.yml` services — `postgres`, `mailpit`, `minio` — as a long-lived environment (`docker compose up -d`); app code runs on the host via `.venv` + `uvicorn` for hot reload. The dev database is standardized on the compose Postgres: `postgresql+psycopg2://fundlok:fundlok@localhost:5433/fundlok_dev`. Run `docker compose up -d postgres` before `alembic upgrade head` or starting the app.
+
+**fl-knowledge MCP server (ADR-005 → ADR-006):** a project-scoped MCP server at `tools/mcp-servers/fl-knowledge/`, registered via `.mcp.json`, that indexes `CLAUDE.md`, `AGENTS.md`, `README.md`, and everything under `docs/`, exposing `search_fl_docs` and `reindex_fl_docs`. It began on BM25 lexical search (ADR-005) and moved to local `sentence-transformers` embeddings + Pinecone (ADR-006). **Prefer `search_fl_docs` over re-reading whole specs/ADRs** — it's the token-efficient way to pull context. Requires a one-time `build_index.py` run and a `PINECONE_API_KEY` in a gitignored local `.env`; the server points you at `build_index.py` if the index is missing. `docs/` stays the source of truth — the server only reads it.
 
 ---
 
@@ -208,6 +218,6 @@ Edward is CTO and backend/architecture owner. **Edward does not write UI code.**
 - [ ] ARQ worker scaffold (deferred)
 
 **Phase 1 — Ledger & Banking (in progress)**
-- [~] Internal ledger foundation — double-entry, custodial/ledger accounts, immutability trigger (spec in REVIEW: `docs/specs/ledger/ledger-foundation.md`, ADR-003)
+- [x] Internal ledger foundation — double-entry ledger, custodial/ledger accounts, immutability trigger (spec ACCEPTED `docs/specs/ledger/ledger-foundation.md`, ADR-003; implemented in `app/ledger/` + migration `862160bce972`, merged PR #18)
 - [ ] Banking Open API integration (Circular 64) + `bank_transactions` + reconciliation
 - [ ] Compliance module — Decree 94 exposure caps, CIC data, reporting (ADR-004)
