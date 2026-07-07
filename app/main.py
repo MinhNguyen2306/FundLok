@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin.router import router as admin_router
+from app.banking.router import router as banking_router
 from app.system.service import is_maintenance_active
 from app.system.router import router as system_router
 from app.auth.router import router as auth_router
@@ -107,6 +108,7 @@ app.include_router(uploads_router)
 app.include_router(contracts_router)
 app.include_router(market_router)
 app.include_router(payments_router)
+app.include_router(banking_router)
 app.include_router(admin_router)
 app.include_router(system_router)
 app.include_router(contact_router)
