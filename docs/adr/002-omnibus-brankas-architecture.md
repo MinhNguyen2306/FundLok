@@ -52,3 +52,18 @@ Corrections are made by adding new entries, never by modifying existing ones.
 - API responses for financial endpoints use 202 Accepted, not 201 Created
 - No direct database writes for financial events without a corresponding `bank_transaction` record (except legacy admin operations during Phase 0)
 - Brankas webhook endpoint must be publicly reachable and HMAC-validated
+
+## Update — July 2026: Vietnam Access & Partner Status
+
+- **Brankas does not serve Vietnam directly.** In Vietnam it operates through a local partner,
+  **Gimasys** (https://gimasys.com/). Edward has reached out to Gimasys to explore their services.
+- **Preferred end state:** integrate directly with the custodial bank whose Open API can span the
+  banks and e-wallets of FL's borrowers and lenders (via NAPAS interoperability), rather than
+  carrying a separate aggregator. This also satisfies Decree 94's requirement to settle through
+  bank accounts or licensed e-wallets (see ADR-004).
+- **Decision still open** between (a) aggregator via Gimasys/Brankas and (b) direct custodial-bank
+  Open API. Per ADR-003, `app/banking/` is built bank-agnostic (client behind an interface), so
+  this is a swappable implementation, not an architecture change.
+- **Integration work is deferred** until a custodial banking partner is signed. The ledger
+  foundation (ADR-003) and compliance work (ADR-004) are intentionally partner-agnostic so they
+  are not blocked by this decision.
