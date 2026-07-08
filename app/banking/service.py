@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.banking.models import ACCOUNT_TYPES, LinkedAccount
@@ -47,6 +47,16 @@ async def list_accounts(db: AsyncSession, *, user_id: UUID) -> list[LinkedAccoun
         .order_by(LinkedAccount.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def has_active_linked_account(db: AsyncSession, *, user_id: UUID) -> bool:
+    """docs/specs/banking/account-linking-mock.md section 10 -- the
+    precondition `app/market/service.py::place_order` checks before
+    accepting an investor's order."""
+    result = await db.execute(
+        select(exists().where(LinkedAccount.user_id == user_id, LinkedAccount.status == "ACTIVE"))
+    )
+    return bool(result.scalar())
 
 
 async def unlink_account(db: AsyncSession, *, user_id: UUID, account_id: UUID) -> LinkedAccount:

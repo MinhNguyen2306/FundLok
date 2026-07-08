@@ -403,8 +403,19 @@ def make_listing(client):
 
 @pytest.fixture
 def place_order(client):
+    """Places an order as `investor`. Since docs/specs/banking/account-linking-mock.md
+    section 10, this requires an ACTIVE linked account -- pass link_account=False
+    to exercise that precondition itself; every other caller gets one linked
+    for free so existing order-placement tests don't need to know about it."""
+
     async def _place(investor: dict, listing_id: str, amount: str = "1000.00", idempotency_key: str | None = None,
-                      ack_risk_disclosure: bool = True):
+                      ack_risk_disclosure: bool = True, link_account: bool = True):
+        if link_account:
+            await client.post(
+                "/banking/accounts/link",
+                json={"account_type": "BANK", "account_number": "0000000000"},
+                headers=auth_headers(investor),
+            )
         headers = dict(auth_headers(investor))
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key

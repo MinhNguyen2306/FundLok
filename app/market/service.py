@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.banking.service import has_active_linked_account
 from app.lending.kyc import project_has_verified_kyc
 from app.lending.models import Contract, Holding, Listing, LoanApplication, Order
 
@@ -100,6 +101,12 @@ async def place_order(
         raise HTTPException(status_code=404, detail="Listing not found")
     if lst.status != "OPEN":
         raise HTTPException(status_code=400, detail="Listing is not open for funding")
+
+    if not await has_active_linked_account(db, user_id=investor_id):
+        raise HTTPException(
+            status_code=400,
+            detail="No active linked account. Link a bank/e-wallet account before funding.",
+        )
 
     amount = _dec(amount)
     target_amt = _dec(lst.target_amount)

@@ -6,7 +6,7 @@
 | **Owner** | Edward |
 | **Implementer(s)** | Edward (backend) |
 | **Module** | `app/banking/` |
-| **Version** | 1.0 |
+| **Version** | 1.2 |
 | **Date** | 2026-07-07 |
 | **Related ADR** | ADR-002 (Omnibus/custodial account) — see Open Questions, this spec's existence changes ADR-002's assumptions |
 | **Depends on** | None |
@@ -24,7 +24,7 @@ To exercise the full lender (and eventually borrower) flow end-to-end in the UI 
 ## 2. Out of Scope
 
 - Any real bank/e-wallet API integration (Brankas or otherwise) — this module is mock-only until a partner is signed, at which point it is replaced, not extended.
-- Enforcing "investor must have a linked account before funding" inside `POST /market/listings/{id}/orders` — that endpoint lives in `app/market/` (Phat-owned per `CLAUDE.md` Module Ownership). Wiring the check in is a follow-up that needs Phat's agreement before either side edits `app/market/service.py`.
+- ~~Actually wiring "investor must have a linked account before funding" into `POST /market/listings/{id}/orders`~~ — implemented, see section 10. `app/market/service.py` is normally Phat-owned per `CLAUDE.md` Module Ownership; this one change was made directly by Edward with explicit authorization rather than handed off.
 - Enforcing a linked payout account before `POST /payments/disbursements` — same reasoning; `app/payments/` is an existing unspec'd shim, not this spec's concern.
 - KYC/KYB identity verification — already live via `app/verification/` (Didit).
 - Multiple accounts marked "default," account verification (micro-deposits, etc.), or any notion of account balance.
@@ -188,7 +188,37 @@ ACTIVE  ──[unlink, by owning user]──►  REVOKED
 |---|---|---|---|
 | 1 | ADR-002 is titled "Omnibus/custodial account via Brankas" and status ACCEPTED, but Brankas is now not expected to happen. Does ADR-002 get superseded/amended, or does a new ADR record the pivot to "partner TBD, mocked indefinitely"? | Edward | Open — flagged, not resolved by this spec |
 | 2 | When a real partner is signed, does `linked_accounts` get replaced outright, or does it become the local cache in front of the partner's own tokenized-account API? | Edward | Deferred to that integration's own spec |
-| 3 | Should `POST /market/listings/{id}/orders` require an ACTIVE linked account before accepting funding? | Edward + Phat | Deferred — needs joint agreement since it touches Phat-owned `app/market/` |
+| 3 | Should `POST /market/listings/{id}/orders` require an ACTIVE linked account before accepting funding? | Edward + Phat | **Resolved and implemented (Edward, 2026-07-08): yes, gated at order-attempt time**, not earlier in the funnel (e.g. not right after KYC) — see section 10. Phat should still review, since `app/market/service.py` is normally his file. |
+
+---
+
+## 10. Market Order Precondition (implemented 2026-07-08)
+
+Resolves Open Question #3. Implemented directly by Edward in `app/market/service.py` (cross-owner change, explicitly authorized — normally this file is Phat's) rather than handed off, since the contract below was already fully specified and there was no reason to wait.
+
+**Where:** `app/market/service.py::place_order`, called from `POST /market/listings/{id}/orders`.
+
+**Why gate at order-attempt time, not earlier:** requiring a linked account right after KYC would add friction for users still browsing listings who haven't decided to fund anything yet. Checking it when they submit an order matches the moment they've actually signaled intent to pay, so the "link an account" prompt reads as the natural next step rather than an arbitrary gate.
+
+**What to add:** before creating the `Order` row (recommended: immediately after confirming `Listing.status == "OPEN"`, before the min-ticket/remaining-capacity checks — a missing payment method is a "you can't do this at all" precondition, distinct from "the amount you chose is wrong," so it should surface first), check that the calling investor has at least one `LinkedAccount` with `status == "ACTIVE"`.
+
+**New helper to import:** `app/banking/service.py` will expose:
+```python
+async def has_active_linked_account(db: AsyncSession, *, user_id: UUID) -> bool
+```
+This is a small, additive change to `app/banking/` (Edward's module) — Phat does not need to touch `app/banking/` to use it.
+
+**Error contract on failure:**
+- Status: `400`
+- Body: `{"detail": "No active linked account. Link a bank/e-wallet account before funding."}`
+- Matches the existing codebase convention (`CLAUDE.md` Key Conventions → API → Errors: always `{"detail": "<message>"}`, no separate machine-readable error code field). The frontend should match on this exact string to distinguish it from other 400s (min-ticket, capacity) and route to the account-linking prompt rather than a generic error toast.
+
+**Acceptance criteria for the `app/market/` side:**
+- [x] `test_place_order_requires_active_linked_account` — investor with no linked account gets 400 with the exact detail string above, no `Order` row created
+- [x] `test_place_order_rejects_revoked_only_accounts` — investor whose only linked account is `REVOKED` is treated the same as having none
+- [x] `test_place_order_succeeds_with_active_linked_account` — unchanged happy path once an `ACTIVE` account exists
+
+(`tests/lending/test_order_requires_linked_account.py`. The shared `place_order` test fixture in root `conftest.py` now links a mock account by default so every pre-existing order-placement test keeps passing unchanged; pass `link_account=False` to exercise the precondition itself.)
 
 ---
 
@@ -197,3 +227,5 @@ ACTIVE  ──[unlink, by owning user]──►  REVOKED
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-07-07 | Edward | Initial draft — mock linking module replacing the Brankas-specific plan |
+| 1.1 | 2026-07-07 | Edward | Resolved Open Question #3; added section 10 (market order precondition contract) for Phat to implement |
+| 1.2 | 2026-07-08 | Edward | Implemented section 10 directly in `app/market/service.py` (cross-owner, explicitly authorized) instead of waiting on Phat; marked acceptance criteria done |
