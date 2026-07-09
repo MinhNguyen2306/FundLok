@@ -166,7 +166,6 @@ jobs:
           source: './'
           flags: '--add-cloudsql-instances fundlok:asia-southeast1:fundlok'
           env_vars: |
-            DATABASE_URL=${{ secrets.STG_DB }}
             SECRET_KEY=${{ secrets.STAGING_SECRET_KEY }}
 
       - name: 'Show output'
