@@ -12,7 +12,7 @@ API backend for the FundLok fintech platform. The app uses FastAPI, SQLAlchemy, 
 
 ## Tech Stack
 
-- Python 3.11+
+- Python 3.11+ 
 - FastAPI
 - SQLAlchemy 2.x
 - Alembic
