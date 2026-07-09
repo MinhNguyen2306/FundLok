@@ -46,7 +46,7 @@ bun run dev      # start Postgres/Mailpit/MinIO, then uvicorn --reload on :8000
 | `bun run setup` | Create `venv` and `pip install -r requirements.txt` |
 | `bun run dev` | Start infra containers, then `uvicorn --reload` on **:8000** |
 | `bun run start` | Start infra + `alembic upgrade head` + uvicorn on **:8000** (no reload) |
-| `bun run reset` | Drop + recreate the local DB → migrate → seed (login password `Password123!`) |
+| `bun run reset` | Drop + recreate the local DB → migrate → seed (login password `Password123!`) | 
 | `bun run migrate` | `alembic upgrade head` |
 | `bun run migrate:new "message"` | Autogenerate a new migration |
 | `bun run seed` | Load `scripts/seed_data.sql` into the local DB |
