@@ -22,15 +22,30 @@ NODRIVER=$(printf '%s' "$RAW_URL" | sed -E 's#^postgresql(\+[a-z0-9_]+)?://#post
 BASE_NOQUERY=$(printf '%s' "$NODRIVER" | sed -E 's#\?.*$##')
 CONN=$(printf '%s' "$BASE_NOQUERY" | sed -E 's#^postgresql://##')
 
+# Cloud SQL unix-socket URLs (staging) carry the real "host" in the query
+# string: postgresql://user:pass@/db?host=/cloudsql/PROJECT:REGION:INSTANCE.
+# That parameter must survive the rewrite — dropping it leaves an empty host,
+# libpq falls back to the container's local socket, and the boot dies with
+# "Is the server running locally and accepting connections on that socket?".
+SOCKET_HOST=$(printf '%s' "$RAW_URL" | sed -n -E 's#.*[?&]host=(/[^&]+).*#\1#p')
+
 # Rebuild the correct URL for each tool from CONN, with driver-appropriate params.
-# We do NOT reuse the secret's query string, because sslmode/channel_binding are
-# libpq-only (psycopg2) and ssl/prepared_statement_cache_size are asyncpg-only —
+# We do NOT reuse the secret's full query string, because sslmode/channel_binding
+# are libpq-only (psycopg2) and ssl/prepared_statement_cache_size are asyncpg-only —
 # feeding one tool the other's params is what breaks the deploy.
-#   Alembic → sync psycopg2 (libpq): sslmode=require
-#   App     → async asyncpg: ssl=require + pooler-safe prepared_statement_cache_size=0
-# (Neon always requires SSL, and this container only ever connects to Neon.)
-SYNC_URL="postgresql+psycopg2://${CONN}?sslmode=require"
-ASYNC_URL="postgresql+asyncpg://${CONN}?ssl=require&prepared_statement_cache_size=0"
+#   Alembic → sync psycopg2 (libpq)
+#   App     → async asyncpg (pooler-safe prepared_statement_cache_size=0)
+# Two connection shapes are supported:
+#   TCP + TLS (Neon, prod):        force SSL on both drivers
+#   Cloud SQL unix socket (staging): pass host=/cloudsql/... through, no SSL
+#                                    (sockets are mounted by --add-cloudsql-instances)
+if [ -n "$SOCKET_HOST" ]; then
+  SYNC_URL="postgresql+psycopg2://${CONN}?host=${SOCKET_HOST}"
+  ASYNC_URL="postgresql+asyncpg://${CONN}?host=${SOCKET_HOST}&prepared_statement_cache_size=0"
+else
+  SYNC_URL="postgresql+psycopg2://${CONN}?sslmode=require"
+  ASYNC_URL="postgresql+asyncpg://${CONN}?ssl=require&prepared_statement_cache_size=0"
+fi
 
 echo "[entrypoint] Running database migrations (alembic upgrade head)..."
 DATABASE_URL="$SYNC_URL" alembic upgrade head
