@@ -12,7 +12,7 @@
 # Required GitHub repository secrets:
 #   SECRET_KEY          production JWT signing key
 #   STAGING_SECRET_KEY  staging JWT signing key (must differ from prod)
-#   FUNLOK_DB           staging DATABASE_URL
+#   STG_DB              staging DATABASE_URL
 # Production DATABASE_URL is intentionally NOT set here — it lives on the
 # prod-api Cloud Run service config and survives deploys because
 # deploy-cloudrun@v2 merges env_vars (see commit 36ad182).
@@ -166,7 +166,7 @@ jobs:
           source: './'
           flags: '--add-cloudsql-instances fundlok:asia-southeast1:fundlok'
           env_vars: |
-            DATABASE_URL=${{ secrets.FUNLOK_DB }}
+            DATABASE_URL=${{ secrets.STG_DB }}
             SECRET_KEY=${{ secrets.STAGING_SECRET_KEY }}
 
       - name: 'Show output'
