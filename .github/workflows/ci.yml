@@ -2,9 +2,9 @@
 # the console-created Cloud Build trigger has been deleted, see
 # docs/deployment/ci-cd-pipeline.md).
 #
-#   PR to dev / preview / main  -> migration check + tests
-#   push to dev                 -> migration check + tests -> deploy "staging"
-#   push to main                -> migration check + tests -> deploy "prod-api"
+#   PR to preview / main  -> migration check + tests
+#   push to preview       -> migration check + tests -> deploy "staging"
+#   push to main          -> migration check + tests -> deploy "prod-api"
 #
 # Deploy jobs are gated with `needs:` — a failing test suite never ships.
 # Google Cloud auth is keyless via Workload Identity Federation.
@@ -134,7 +134,7 @@ jobs:
     name: Deploy to Cloud Run (staging)
     runs-on: ubuntu-latest
     needs: [migration-check, tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/preview'
 
     permissions:
       contents: 'read'
