@@ -52,6 +52,7 @@ bun run dev      # start Postgres/Mailpit/MinIO, then uvicorn --reload on :8000
 | `bun run seed` | Load `scripts/seed_data.sql` into the local DB |
 | `bun run psql` | Open a `psql` shell to `fundlok_dev` |
 | `bun run test` | Run `pytest -q` |
+| `bun run ngrok` | Expose the local API over a public URL (`ngrok http 8000`) — needed for Didit webhooks to reach `/kyc/webhook` in local dev |
 | `bun run up` / `down` / `stop` / `logs` | Manage the infra containers (Postgres, Mailpit, MinIO) |
 
 Full-container run (builds the image and runs the API in Docker too, prod-like):
