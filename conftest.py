@@ -228,11 +228,13 @@ def make_user(client):
             "/auth/register",
             json={"email": email, "password": DEFAULT_PASSWORD, "full_name": full_name},
         )
-        assert reg.status_code == 200, reg.text
-        user_id = reg.json()["id"]
+        # Register returns a uniform ack (no user body, 201) so it can't be used
+        # to enumerate accounts; the user id comes from the login response.
+        assert reg.status_code == 201, reg.text
 
         login = await client.post("/auth/login", json={"email": email, "password": DEFAULT_PASSWORD})
         assert login.status_code == 200, login.text
+        user_id = login.json()["id"]
         access_token = login.cookies.get("access_token")
         refresh_token = login.cookies.get("refresh_token")
         headers = {"Authorization": f"Bearer {access_token}"}

@@ -26,14 +26,17 @@ async def test_register_then_login_issues_token_pair(client):
         "/auth/register",
         json={"email": email, "password": "Str0ngPassw0rd!1", "full_name": "Lifecycle User"},
     )
-    assert reg.status_code == 200
-    body = reg.json()
-    assert body["email"] == email
-    assert body["role"] is None  # role is chosen later via PATCH /users/me/role
-    user_id = body["id"]
+    # Register returns a uniform acknowledgement (no user body) so it can't be
+    # used to enumerate accounts; the created user's id comes from login below.
+    assert reg.status_code == 201
+    assert reg.json()["status"] == "success"
 
     login = await client.post("/auth/login", json={"email": email, "password": "Str0ngPassw0rd!1"})
     assert login.status_code == 200
+    login_body = login.json()
+    assert login_body["email"] == email
+    assert login_body["role"] is None  # role is chosen later via PATCH /users/me/role
+    user_id = login_body["id"]
 
     access_token = login.cookies.get("access_token")
     refresh_token = login.cookies.get("refresh_token")
@@ -46,6 +49,36 @@ async def test_register_then_login_issues_token_pair(client):
     assert refresh_payload["typ"] == "refresh"
     # Characterizes current behavior: the access token carries no "typ" claim at all.
     assert "typ" not in access_payload
+
+
+async def test_register_duplicate_email_is_not_enumerable(client):
+    """A second registration with an existing email returns the SAME uniform
+    201 acknowledgement as a fresh one — no 400 'already registered' that would
+    let an attacker enumerate accounts."""
+    email = "dup-enum-user@example.com"
+    first = await client.post(
+        "/auth/register",
+        json={"email": email, "password": "Str0ngPassw0rd!1", "full_name": "First"},
+    )
+    assert first.status_code == 201
+
+    second = await client.post(
+        "/auth/register",
+        json={"email": email, "password": "An0therPassw0rd!2", "full_name": "Second"},
+    )
+    # Indistinguishable from the first response: same status and same body shape.
+    assert second.status_code == 201
+    assert second.json() == first.json()
+
+    # And the duplicate did NOT overwrite the original account's password.
+    login_original = await client.post(
+        "/auth/login", json={"email": email, "password": "Str0ngPassw0rd!1"}
+    )
+    assert login_original.status_code == 200
+    login_attacker = await client.post(
+        "/auth/login", json={"email": email, "password": "An0therPassw0rd!2"}
+    )
+    assert login_attacker.status_code == 401
 
 
 async def test_login_with_bad_password_returns_401(client):

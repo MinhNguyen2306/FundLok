@@ -7,6 +7,7 @@ from app.auth.schemas import (
     LoginRequest,
     RefreshRequest,
     ResendVerificationRequest,
+    RegisterResponse,
     ResetPasswordRequest,
     Token,
     UserCreate,
@@ -38,7 +39,7 @@ async def simple_login(response: Response, login_data: LoginRequest, db: AsyncSe
     return user
 
 
-@router.post("/register", response_model=UserOut)
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     return await service.register_user(db, user, background_tasks)
 

@@ -53,6 +53,19 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RegisterResponse(BaseModel):
+    """Uniform registration acknowledgement.
+
+    Returned identically whether or not the email/phone is already in use, so
+    the endpoint cannot be used to enumerate registered accounts (mirrors the
+    forgot-password flow). A genuinely new address is created and emailed a
+    verification link; an already-registered email receives a security notice
+    instead — the submitter can't tell the two apart.
+    """
+    status: str = "success"
+    message: str
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

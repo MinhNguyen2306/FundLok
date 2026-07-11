@@ -4,6 +4,7 @@ from uuid import UUID
 
 from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
 
@@ -22,7 +23,11 @@ from app.utils.jwt import (
     verify_email_token,
     verify_password_reset_token,
 )
-from app.utils.email import send_password_reset_email, send_verification_email
+from app.utils.email import (
+    send_existing_account_notice,
+    send_password_reset_email,
+    send_verification_email,
+)
 from app.utils.captcha import verify_turnstile_token
 from app.core.config import settings
 
@@ -160,17 +165,40 @@ async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]
     return user, tokens
 
 
-async def register_user(db: AsyncSession, user_in: UserCreate, background_tasks: BackgroundTasks) -> User:
+async def register_user(
+    db: AsyncSession, user_in: UserCreate, background_tasks: BackgroundTasks
+) -> dict:
+    """Register a new user without leaking whether the email/phone already exists.
+
+    Every branch returns the same acknowledgement, so the endpoint can't be used
+    to enumerate registered accounts (mirrors forgot_password):
+      - new address        -> create the user, email a verification link
+      - email already taken -> email the real owner an "account exists" notice
+      - phone already taken -> stay silent (no SMS channel to notify)
+    """
     verify_turnstile_token(user_in.turnstile_token)
 
-    result = await db.execute(select(User).where(User.email == user_in.email))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
+    # Uniform response for all outcomes below. Wording must not imply success or
+    # failure of account creation specifically.
+    ack = {
+        "status": "success",
+        "message": "If these details are available, a verification email has been sent.",
+    }
+
+    existing_email = (
+        await db.execute(select(User).where(User.email == user_in.email))
+    ).scalar_one_or_none()
+    if existing_email is not None:
+        # Don't create or reveal — tell the genuine owner someone used their email.
+        background_tasks.add_task(send_existing_account_notice, to_email=user_in.email)
+        return ack
 
     if user_in.phone:
-        result = await db.execute(select(User).where(User.phone == user_in.phone))
-        if result.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Phone number already registered")
+        existing_phone = (
+            await db.execute(select(User).where(User.phone == user_in.phone))
+        ).scalar_one_or_none()
+        if existing_phone is not None:
+            return ack
 
     new_user = User(
         email=user_in.email,
@@ -182,14 +210,21 @@ async def register_user(db: AsyncSession, user_in: UserCreate, background_tasks:
         email_verified=False,
     )
     db.add(new_user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Lost a race with a concurrent signup on the same email/phone (the DB
+        # unique constraints are the real guard). Roll back and return the same
+        # acknowledgement so the collision still isn't observable.
+        await db.rollback()
+        return ack
     await db.refresh(new_user)
 
     # Generate verification token and send verification email in background.
     token = create_verification_token(new_user.id)
     background_tasks.add_task(send_verification_email, to_email=new_user.email, token=token)
 
-    return new_user
+    return ack
 
 
 async def verify_email(db: AsyncSession, token: str) -> dict:

@@ -190,10 +190,82 @@ def send_password_reset_email(to_email: str, token: str) -> None:
     """
     
     text_content = f"Please reset your password by visiting this link: {reset_link}"
-    
+
     send_email(
         to_email=to_email,
         subject=subject,
         html_content=html_content,
         text_content=text_content
+    )
+
+
+def send_existing_account_notice(to_email: str) -> None:
+    """Notify the real owner that someone tried to register with their email.
+
+    Sent instead of a verification email when registration hits an
+    already-registered address. This lets the legitimate owner react (log in
+    or reset their password) without the registration endpoint ever confirming
+    to the submitter that the account exists — the anti-enumeration guarantee.
+    """
+    from datetime import datetime
+
+    login_link = f"{settings.FRONTEND_URL}/login"
+    reset_link = f"{settings.FRONTEND_URL}/forgot-password"
+
+    subject = "About your FundLok account"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }}
+        .wrapper {{ background-color: #f4f7f6; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .title {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0; }}
+        .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
+        .cta-container {{ text-align: center; margin: 35px 0; }}
+        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #16a34a; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.25); }}
+        .footer {{ text-align: center; color: #9ca3af; font-size: 13px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="container">
+          <div class="header">
+            <h1 class="title">Your account already exists</h1>
+          </div>
+          <div class="content">
+            <p>We received a request to create a new <strong>FundLok</strong> account with this email address, but you already have one.</p>
+            <p>If this was you, just sign in — there's no need to register again. If you've forgotten your password, you can reset it.</p>
+          </div>
+          <div class="cta-container">
+            <a href="{login_link}" class="cta-button" style="color: #ffffff;">Sign in</a>
+          </div>
+          <div class="content">
+            <p>Forgot your password? <a href="{reset_link}" style="color: #16a34a;">Reset it here</a>.</p>
+            <p>If you did not try to register, you can safely ignore this email — no changes were made to your account.</p>
+          </div>
+          <div class="footer">
+            <p>&copy; {datetime.now().year} FundLok. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    text_content = (
+        "We received a request to create a FundLok account with this email, but "
+        f"you already have one. Sign in at {login_link} or reset your password at "
+        f"{reset_link}. If this wasn't you, you can ignore this email."
+    )
+
+    send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content,
     )
