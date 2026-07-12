@@ -63,6 +63,7 @@ Full-container run (builds the image and runs the API in Docker too, prod-like):
 | `bun run docker:build` | Build just the api image |
 | `bun run docker:down` | Stop everything |
 | `bun run docker:logs` | Tail the api container logs |
+| `bun run docker:test` | Run the test suite entirely in Docker, mirroring the CI job (throwaway `postgres:15` + `python:3.11`, no venv or host ports needed). Extra args pass through to pytest, e.g. `bun run docker:test tests/auth -q` |
 
 Prefer `bun run dev` for day-to-day work (hot reload, runs on the host so `localhost`
 reaches every container). Use `bun run docker:up` for a prod-like containerized run.

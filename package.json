@@ -19,6 +19,7 @@
     "psql": "docker compose exec postgres psql -U fundlok -d fundlok_dev",
     "test": "./venv/bin/pytest -q",
     "docker:build": "docker compose build api",
+    "docker:test": "./scripts/docker_test.sh",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f api"

@@ -197,6 +197,7 @@ def _mock_external_io(monkeypatch):
     real SMTP server, Cloudflare R2, Brankas, or Didit endpoint."""
     monkeypatch.setattr("app.auth.service.send_verification_email", lambda *a, **kw: None)
     monkeypatch.setattr("app.auth.service.send_password_reset_email", lambda *a, **kw: None)
+    monkeypatch.setattr("app.auth.service.send_existing_account_notice", lambda *a, **kw: None)
     yield
 
 
