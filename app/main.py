@@ -25,6 +25,7 @@ from app.underwriting.router import router as underwriting_router
 from app.uploads.router import files_router, router as uploads_router
 from app.users.router import router as users_router
 from app.verification.router import kyb_router, kyc_router
+from app.gverify.router import router as gverify_router
 from app.contact.router import router as contact_router
 
 app = FastAPI(
@@ -102,6 +103,7 @@ app.include_router(sme_router)
 app.include_router(files_router)
 app.include_router(kyc_router)
 app.include_router(kyb_router)
+app.include_router(gverify_router)
 app.include_router(loans_router)
 app.include_router(underwriting_router)
 app.include_router(uploads_router)

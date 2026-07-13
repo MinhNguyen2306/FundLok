@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     DIDIT_CALLBACK_URL: str | None = None  # FE return URL; defaults to FRONTEND_URL/kyc/callback
     DIDIT_LANGUAGE: str = "vi"  # ISO 639-1 UI language for the hosted flow (Vietnamese)
 
+    # GVerify / GHub eKYC (Datatrust, API v2.5.1) — direct-API KYC provider,
+    # parallel to Didit. See docs/specs/gverify/ekyc-kyc-verification.md.
+    GVERIFY_BASE_URL: str | None = None  # partner-provided {api-base-url}
+    GVERIFY_API_KEY: str | None = None  # x-api-key header value
+    GVERIFY_PARTNER_CODE: str | None = None  # partner/subpartner "code" sent per request
+    GVERIFY_OS_TYPE: str = "fundlok-backend"  # os-type header
+    GVERIFY_FACE_MATCH_THRESHOLD: float = 0.80  # min {data}.match to approve
+    GVERIFY_MIN_OCR_CONFIDENCE: float = 0.85  # min person_number/full_name confidence
+
 
 
 settings = Settings()
