@@ -13,9 +13,18 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 
 
+def is_configured() -> bool:
+    """True when the R2 credentials are present. Callers with best-effort
+    storage (e.g. verification document retention) check this to no-op
+    gracefully instead of surfacing the 503 that _client() raises."""
+    return bool(
+        settings.R2_ENDPOINT_URL and settings.R2_ACCESS_KEY_ID and settings.R2_SECRET_ACCESS_KEY
+    )
+
+
 @lru_cache(maxsize=1)
 def _client():
-    if not (settings.R2_ENDPOINT_URL and settings.R2_ACCESS_KEY_ID and settings.R2_SECRET_ACCESS_KEY):
+    if not is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Object storage is not configured",
@@ -27,6 +36,20 @@ def _client():
         aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
         region_name=settings.R2_REGION,
         config=Config(signature_version="s3v4"),
+    )
+
+
+def put_bytes(file_key: str, data: bytes, content_type: str, *, bucket: str | None = None) -> None:
+    """Server-side direct upload of an in-memory object (no presign round-trip).
+
+    Used where the backend itself holds the bytes — e.g. retaining verification
+    documents. ``bucket`` overrides the default uploads bucket.
+    """
+    _client().put_object(
+        Bucket=bucket or settings.R2_BUCKET,
+        Key=file_key,
+        Body=data,
+        ContentType=content_type,
     )
 
 

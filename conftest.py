@@ -198,6 +198,13 @@ def _mock_external_io(monkeypatch):
     monkeypatch.setattr("app.auth.service.send_verification_email", lambda *a, **kw: None)
     monkeypatch.setattr("app.auth.service.send_password_reset_email", lambda *a, **kw: None)
     monkeypatch.setattr("app.auth.service.send_existing_account_notice", lambda *a, **kw: None)
+
+    # GVerify verification-document retention writes to R2 — never in tests.
+    async def _no_store(*a, **kw):
+        return None
+
+    monkeypatch.setattr("app.gverify.storage.store_kyc_documents", _no_store)
+    monkeypatch.setattr("app.gverify.storage.store_kyb_document", _no_store)
     yield
 
 

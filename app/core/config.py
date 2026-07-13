@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     R2_ACCESS_KEY_ID: str | None = None
     R2_SECRET_ACCESS_KEY: str | None = None
     R2_BUCKET: str = "fundlok-uploads"
+    # Bucket for retained KYC/KYB verification documents (falls back to
+    # R2_BUCKET when unset; keys are prefixed verification/KYC|KYB/<id>/).
+    R2_VERIFICATION_BUCKET: str | None = None
     R2_REGION: str = "auto"
     R2_PRESIGN_EXPIRE_SECONDS: int = 15 * 60
 
@@ -50,6 +53,20 @@ class Settings(BaseSettings):
     DIDIT_BASE_URL: str = "https://verification.didit.me"
     DIDIT_CALLBACK_URL: str | None = None  # FE return URL; defaults to FRONTEND_URL/kyc/callback
     DIDIT_LANGUAGE: str = "vi"  # ISO 639-1 UI language for the hosted flow (Vietnamese)
+
+    # GVerify / GHub eKYC (Datatrust, API v2.5.1) — direct-API KYC provider,
+    # parallel to Didit. See docs/specs/gverify/ekyc-kyc-verification.md.
+    GVERIFY_BASE_URL: str | None = None  # partner-provided {api-base-url}
+    GVERIFY_API_KEY: str | None = None  # x-api-key header value
+    GVERIFY_PARTNER_CODE: str | None = None  # partner/subpartner "code" sent per request
+    GVERIFY_OS_TYPE: str = "fundlok-backend"  # os-type header
+    GVERIFY_FACE_MATCH_THRESHOLD: float = 0.80  # min {data}.match to approve
+    GVERIFY_MIN_OCR_CONFIDENCE: float = 0.85  # min person_number/full_name confidence
+    # KYB (business verification) — docs/specs/gverify/ekyb-kyb-verification.md
+    GVERIFY_MIN_KYB_OCR_CONFIDENCE: float = 0.85  # min name/tax_code confidence
+    # Require the SME's KYC-verified person_number to appear among the
+    # certificate's legal representatives (spec Rule 7, default off pending review).
+    GVERIFY_KYB_REQUIRE_REP_MATCH: bool = False
 
 
 
