@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     R2_ACCESS_KEY_ID: str | None = None
     R2_SECRET_ACCESS_KEY: str | None = None
     R2_BUCKET: str = "fundlok-uploads"
+    # Bucket for retained KYC/KYB verification documents (falls back to
+    # R2_BUCKET when unset; keys are prefixed verification/KYC|KYB/<id>/).
+    R2_VERIFICATION_BUCKET: str | None = None
     R2_REGION: str = "auto"
     R2_PRESIGN_EXPIRE_SECONDS: int = 15 * 60
 
@@ -59,6 +62,11 @@ class Settings(BaseSettings):
     GVERIFY_OS_TYPE: str = "fundlok-backend"  # os-type header
     GVERIFY_FACE_MATCH_THRESHOLD: float = 0.80  # min {data}.match to approve
     GVERIFY_MIN_OCR_CONFIDENCE: float = 0.85  # min person_number/full_name confidence
+    # KYB (business verification) — docs/specs/gverify/ekyb-kyb-verification.md
+    GVERIFY_MIN_KYB_OCR_CONFIDENCE: float = 0.85  # min name/tax_code confidence
+    # Require the SME's KYC-verified person_number to appear among the
+    # certificate's legal representatives (spec Rule 7, default off pending review).
+    GVERIFY_KYB_REQUIRE_REP_MATCH: bool = False
 
 
 

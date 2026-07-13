@@ -48,3 +48,52 @@ class KycStatusResponse(BaseModel):
     person_number: str | None = None
     full_name: str | None = None
     updated_at: datetime | None = None
+
+
+class KybRepresentative(BaseModel):
+    """Slimmed legal-representative entry from the OCR X payload."""
+
+    name: str | None = None
+    id_number: str | None = None
+    title: str | None = None
+
+
+class KybVerifyRequest(BaseModel):
+    """Body for POST /gverify/kyb/verify.
+
+    The business registration certificate as base64 (JPEG, PNG or PDF,
+    decoded size <= 10MB). document_type selects the OCR X variant:
+    COMPANY | COMPANY_BRANCH | HOUSEHOLD (validated in the service so an
+    unknown value returns the spec'd 400, not a 422).
+    """
+
+    document_b64: str
+    document_type: str
+
+
+class KybVerifyResponse(BaseModel):
+    """Synchronous verdict for a KYB attempt (APPROVED or REJECTED)."""
+
+    verification_id: UUID
+    status: str
+    is_approved: bool
+    rejection_reason: str | None = None
+    tax_code: str | None = None
+    business_name: str | None = None
+    business_type: str | None = None
+    business_status: str | None = None  # from the tax registry, when reached
+    representatives: list[KybRepresentative] = []
+    created_at: datetime | None = None
+
+
+class KybStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    verification_id: UUID
+    status: str
+    is_terminal: bool
+    is_approved: bool
+    rejection_reason: str | None = None
+    tax_code: str | None = None
+    business_name: str | None = None
+    updated_at: datetime | None = None

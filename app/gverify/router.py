@@ -18,10 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.gverify import service
+from app.gverify import kyb_service, service
 from app.gverify.client import GVerifyError
 from app.gverify.schemas import (
     HandoffResponse,
+    KybRepresentative,
+    KybStatusResponse,
+    KybVerifyRequest,
+    KybVerifyResponse,
     KycStatusResponse,
     KycVerifyRequest,
     KycVerifyResponse,
@@ -35,6 +39,11 @@ from app.utils.rbac import require_roles
 router = APIRouter(prefix="/gverify/kyc", tags=["gverify-kyc"])
 
 _authorized = require_roles(Role.INVESTOR)
+
+# KYB — business verification for SMEs (spec: ekyb-kyb-verification.md).
+kyb_router = APIRouter(prefix="/gverify/kyb", tags=["gverify-kyb"])
+
+_sme_authorized = require_roles(Role.SME)
 
 
 async def _run_verification(
@@ -158,5 +167,95 @@ async def get_status(
         rejection_reason=attempt.rejection_reason,
         person_number=attempt.person_number,
         full_name=attempt.full_name,
+        updated_at=attempt.updated_at,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# KYB — business verification (SME)
+# --------------------------------------------------------------------------- #
+
+
+@kyb_router.post("/verify", response_model=KybVerifyResponse, status_code=201)
+async def kyb_verify(
+    request: Request,
+    body: KybVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_sme_authorized),
+):
+    """One-shot KYB: OCR the registration certificate, cross-check the tax
+    code against the state registry, return the verdict.
+
+    A REJECTED outcome is still 201 — the business verdict is in the body.
+    Only provider failures surface as 502 (the attempt is persisted FAILED).
+    """
+    latest = await kyb_service.latest_for_user(db, current_user.id)
+    if latest is not None and latest.is_approved:
+        raise HTTPException(status_code=409, detail="KYB is already approved")
+
+    try:
+        attempt = await kyb_service.run_kyb_verification(
+            db,
+            current_user,
+            document_b64=body.document_b64,
+            document_type=body.document_type,
+        )
+    except ImageValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except GVerifyError as exc:
+        # The FAILED attempt row is already flushed — commit so it's recorded.
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    append_audit(
+        db,
+        entity_type="GVERIFY_KYB_VERIFICATION",
+        entity_id=attempt.id,
+        action="VERIFY",
+        actor_id=current_user.id,
+        after_state={"status": attempt.status, "tax_code": attempt.tax_code},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    await db.refresh(attempt)
+
+    return KybVerifyResponse(
+        verification_id=attempt.id,
+        status=attempt.status,
+        is_approved=attempt.is_approved,
+        rejection_reason=attempt.rejection_reason,
+        tax_code=attempt.tax_code,
+        business_name=attempt.business_name,
+        business_type=attempt.business_type,
+        business_status=kyb_service.business_status(attempt),
+        representatives=[
+            KybRepresentative(
+                name=rep.get("name"),
+                id_number=rep.get("id_number"),
+                title=rep.get("title"),
+            )
+            for rep in (attempt.representatives or [])
+        ],
+        created_at=attempt.created_at,
+    )
+
+
+@kyb_router.get("/status", response_model=KybStatusResponse)
+async def kyb_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(_sme_authorized),
+):
+    """Return the caller's latest GVerify KYB attempt, if any."""
+    attempt = await kyb_service.latest_for_user(db, current_user.id)
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="No GVerify KYB verification found")
+    return KybStatusResponse(
+        verification_id=attempt.id,
+        status=attempt.status,
+        is_terminal=attempt.is_terminal,
+        is_approved=attempt.is_approved,
+        rejection_reason=attempt.rejection_reason,
+        tax_code=attempt.tax_code,
+        business_name=attempt.business_name,
         updated_at=attempt.updated_at,
     )

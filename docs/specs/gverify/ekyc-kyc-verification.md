@@ -40,9 +40,6 @@ APPROVED/REJECTED verdict with the extracted identity.
 - eID chip verification (`/eid/api/*`) and CA digital signing (`/ca/api/*`).
 - Address-decoding variants (63→34 province mapping) — we store OCR addresses verbatim.
 - Removing or rerouting the existing Didit `/kyc/*` endpoints.
-- Storing the submitted images. Images are held in memory for the duration of the
-  request and discarded (data minimisation); only the extracted fields and provider
-  payloads are persisted.
 - Any change to how downstream modules consume KYC state (they keep using whatever
   they use today; wiring loan/market gating to this table is a follow-up).
 
@@ -203,7 +200,12 @@ PENDING ──[GVerify HTTP error / success=false]─► FAILED
 4. Face match passes iff `is_matching` is true AND — when `match` parses as a
    float — `match` ≥ `GVERIFY_FACE_MATCH_THRESHOLD`.
 5. Both provider payloads (`{data}`) are persisted verbatim (JSONB) on the
-   attempt row for audit; submitted images are never persisted.
+   attempt row for audit. The submitted images are retained in R2 under
+   `verification/KYC/{verification_id}/` (bucket `R2_VERIFICATION_BUCKET`,
+   falling back to `R2_BUCKET`) — v1.1 decision, reversing v1.0's
+   no-retention stance. Retention is best-effort: a storage outage never
+   blocks the verification (logged, provider payloads remain the primary
+   audit record). Keys are deterministic from the attempt id — no DB column.
 6. Every attempt writes an audit-log entry (entity `GVERIFY_KYC_VERIFICATION`,
    action `VERIFY`, actor = the user).
 7. The face-match call is skipped when OCR already failed (fail fast, one less
@@ -267,3 +269,4 @@ outcome is in the body. Only provider failures surface as 5xx.
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-07-13 | Phat | Initial draft |
+| 1.1 | 2026-07-14 | Phat | Retain submitted images in R2 (`verification/KYC/<id>/`); surface biometric invalid_message verbatim; phone QR handoff endpoints |

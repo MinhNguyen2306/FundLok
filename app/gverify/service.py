@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.gverify import client
+from app.gverify import client, storage
 from app.gverify.models import (
     STATUS_APPROVED,
     STATUS_FAILED,
@@ -44,8 +44,8 @@ class ImageValidationError(ValueError):
     """A submitted image failed base64/format/size validation (caller error)."""
 
 
-def _validate_image(name: str, b64: str) -> str:
-    """Check one base64 image; returns the (stripped) base64 string."""
+def _validate_image(name: str, b64: str) -> tuple[str, bytes]:
+    """Check one base64 image; returns the (stripped) base64 string + raw bytes."""
     b64 = (b64 or "").strip()
     if not b64:
         raise ImageValidationError(f"{name} is empty")
@@ -57,7 +57,7 @@ def _validate_image(name: str, b64: str) -> str:
         raise ImageValidationError(f"{name} exceeds the 10MB limit")
     if not (raw.startswith(_JPEG_MAGIC) or raw.startswith(_PNG_MAGIC)):
         raise ImageValidationError(f"{name} must be a JPEG or PNG image")
-    return b64
+    return b64, raw
 
 
 def _is_truthy(value) -> bool:
@@ -143,13 +143,19 @@ async def run_kyc_verification(
     client.GVerifyError (provider failure — the attempt row is left FAILED;
     the caller must still commit so the failure is recorded).
     """
-    front = _validate_image("id_front_b64", id_front_b64)
-    back = _validate_image("id_back_b64", id_back_b64)
-    portrait = _validate_image("portrait_b64", portrait_b64)
+    front, front_raw = _validate_image("id_front_b64", id_front_b64)
+    back, back_raw = _validate_image("id_back_b64", id_back_b64)
+    portrait, portrait_raw = _validate_image("portrait_b64", portrait_b64)
 
     attempt = GVerifyVerification(user_id=user.id, status=STATUS_PENDING)
     db.add(attempt)
     await db.flush()
+
+    # Retain the submitted documents under verification/KYC/<attempt-id>/ —
+    # best-effort; the attempt proceeds even if storage is down.
+    await storage.store_kyc_documents(
+        attempt.id, id_front=front_raw, id_back=back_raw, portrait=portrait_raw
+    )
 
     try:
         ocr = await client.verify_ocr_id(img_front_b64=front, img_back_b64=back)

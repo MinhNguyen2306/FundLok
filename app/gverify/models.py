@@ -65,3 +65,59 @@ class GVerifyVerification(Base):
     @property
     def is_approved(self) -> bool:
         return self.status == STATUS_APPROVED
+
+
+class GVerifyKybVerification(Base):
+    """One GVerify eKYB (business verification) attempt for an SME user.
+
+    Separate from GVerifyVerification — the payload is business-shaped, not
+    person-shaped. Same append-per-attempt pattern: the newest row per user is
+    the current state; retries are new rows. The certificate document is never
+    persisted — only the extracted fields and raw provider payloads.
+    Spec: docs/specs/gverify/ekyb-kyb-verification.md
+    """
+
+    __tablename__ = "gverify_kyb_verifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status = Column(Text, nullable=False, server_default=STATUS_PENDING)
+    # Certificate variant sent to OCR X: COMPANY | COMPANY_BRANCH | HOUSEHOLD.
+    document_type = Column(Text, nullable=False)
+
+    # GVerify transaction ids for provider reconciliation.
+    ocr_transaction_code = Column(Text, nullable=True)
+    tax_transaction_code = Column(Text, nullable=True)
+
+    # Key company fields extracted by OCR X and confirmed by the tax registry.
+    tax_code = Column(Text, nullable=True, index=True)
+    business_name = Column(Text, nullable=True)
+    business_type = Column(Text, nullable=True)
+    company_address = Column(Text, nullable=True)
+    date_of_establishment = Column(Text, nullable=True)
+    charter_capital = Column(Text, nullable=True)
+    representatives = Column(JSONB, nullable=True)  # OCR X representatives verbatim
+
+    # Full provider payloads ({data} objects) for audit.
+    ocr_data = Column(JSONB, nullable=True)
+    tax_data = Column(JSONB, nullable=True)
+
+    rejection_reason = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user = relationship("User")
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in TERMINAL_STATUSES
+
+    @property
+    def is_approved(self) -> bool:
+        return self.status == STATUS_APPROVED
