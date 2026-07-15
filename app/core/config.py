@@ -60,7 +60,6 @@ class Settings(BaseSettings):
     GVERIFY_API_KEY: str | None = None  # x-api-key header value
     GVERIFY_PARTNER_CODE: str | None = None  # partner/subpartner "code" sent per request
     GVERIFY_OS_TYPE: str = "fundlok-backend"  # os-type header
-    GVERIFY_FACE_MATCH_THRESHOLD: float = 0.80  # min {data}.match to approve
     GVERIFY_MIN_OCR_CONFIDENCE: float = 0.85  # min person_number/full_name confidence
     # KYB (business verification) — docs/specs/gverify/ekyb-kyb-verification.md
     GVERIFY_MIN_KYB_OCR_CONFIDENCE: float = 0.85  # min name/tax_code confidence

@@ -97,7 +97,9 @@ async def verify_ocr_id(*, img_front_b64: str, img_back_b64: str) -> dict[str, A
 async def face_match(*, img1_b64: str, img2_b64: str) -> dict[str, Any]:
     """POST /ekyc/api/base64/face-match — 1:1 face comparison.
 
-    Returns the ``data`` object: ``is_matching`` plus ``match`` (0–1 score).
+    Call with ``img1`` = ID-card front, ``img2`` = live portrait (order per
+    partner testing). Returns the ``data`` object: ``is_matching`` (the
+    verdict), ``match`` (its "1"/"0" mirror) and ``matching`` (similarity %).
     """
     return await _post(
         "/ekyc/api/base64/face-match",

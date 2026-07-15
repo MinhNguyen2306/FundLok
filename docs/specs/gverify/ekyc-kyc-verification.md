@@ -83,7 +83,6 @@ GVERIFY_BASE_URL              str        no default in prod; partner-provided {a
 GVERIFY_API_KEY               str|None   x-api-key header value
 GVERIFY_PARTNER_CODE          str|None   partner/subpartner "code" sent per request
 GVERIFY_OS_TYPE               str        default "fundlok-backend" (os-type header)
-GVERIFY_FACE_MATCH_THRESHOLD  float      default 0.80 — min {data}.match to approve
 GVERIFY_MIN_OCR_CONFIDENCE    float      default 0.85 — min person_number/full_name confidence
 ```
 
@@ -162,7 +161,8 @@ Returns the caller's **latest** attempt.
 - `POST {base}/ekyc/api/base64/verify-ocrid` — body `{code, img_front, img_back}`;
   headers `x-api-key`, `os-type`, `Content-type: application/json`.
 - `POST {base}/ekyc/api/base64/face-match` — body `{code, img1, img2}` where
-  `img1` = portrait, `img2` = ID front.
+  `img1` = ID-card front, `img2` = live portrait (order per partner testing,
+  2026-07-15).
 - Both return the `{success, error{code,message}, data{...}}` envelope;
   `success=false` or HTTP ≠ 200 ⇒ provider error (our 502). GVerify error codes
   seen in the doc: `401` (bad APIKey), `ERROR_99` (unknown).
@@ -197,8 +197,15 @@ PENDING ──[GVerify HTTP error / success=false]─► FAILED
    floats — `person_number_confidence` ≥ `GVERIFY_MIN_OCR_CONFIDENCE` and
    `full_name_confidence` ≥ `GVERIFY_MIN_OCR_CONFIDENCE`. Unparseable confidence
    values are ignored (the field set varies by card type).
-4. Face match passes iff `is_matching` is true AND — when `match` parses as a
-   float — `match` ≥ `GVERIFY_FACE_MATCH_THRESHOLD`.
+4. Face match passes iff the provider's `is_matching` flag is true — FL applies
+   **no threshold of its own**. Observed live (TPVDEMO): `match` is a "1"/"0"
+   binary mirror of `is_matching`, and `matching` is the similarity percentage;
+   both are persisted in `face_data` (and `matching`/100 is surfaced to the FE
+   as `face_match_score`) but neither is re-thresholded. The biometric warning
+   (`invalid_code`/`invalid_message`) is **advisory only and never gates the
+   verdict**: per Datatrust guidance (Minh Đăng, 2026-07-14), a document photo
+   in the pair naturally trips the anti-spoof warning. It stays in `face_data`
+   for audit.
 5. Both provider payloads (`{data}`) are persisted verbatim (JSONB) on the
    attempt row for audit. The submitted images are retained in R2 under
    `verification/KYC/{verification_id}/` (bucket `R2_VERIFICATION_BUCKET`,
@@ -270,3 +277,5 @@ outcome is in the body. Only provider failures surface as 5xx.
 |---|---|---|---|
 | 1.0 | 2026-07-13 | Phat | Initial draft |
 | 1.1 | 2026-07-14 | Phat | Retain submitted images in R2 (`verification/KYC/<id>/`); surface biometric invalid_message verbatim; phone QR handoff endpoints |
+| 1.2 | 2026-07-14 | Phat | Supersedes 1.1's invalid_message rule: face-match warning is advisory only (Datatrust guidance) — verdict decided by `is_matching` + `match` threshold alone |
+| 1.3 | 2026-07-15 | Phat | Verdict = `is_matching` alone (live testing showed `match` is a binary mirror, `matching` the similarity %); dropped `GVERIFY_FACE_MATCH_THRESHOLD`; image order fixed to img1 = ID front, img2 = portrait |
