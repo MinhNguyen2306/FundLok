@@ -66,8 +66,8 @@ gverify_kyb_verifications
 ├── id                      UUID          PK, default gen_random_uuid()
 ├── user_id                 UUID          NOT NULL → users(id) ON DELETE CASCADE, indexed
 ├── status                  TEXT          NOT NULL, server default 'PENDING'
-│                                         (app-enforced: PENDING | APPROVED | REJECTED | FAILED)
-├── document_type           TEXT          NOT NULL  -- COMPANY | COMPANY_BRANCH | HOUSEHOLD (as sent to OCR X)
+│                                         (app-enforced: PENDING | APPROVED | REJECTED | MANUAL_REVIEW | FAILED)
+├── document_type           TEXT          NOT NULL  -- COMPANY | COMPANY_BRANCH (as sent to OCR X; HOUSEHOLD dropped in v1.2)
 ├── ocr_transaction_code    TEXT          nullable
 ├── tax_transaction_code    TEXT          nullable
 ├── tax_code                TEXT          nullable, indexed  -- from OCR, confirmed by registry
@@ -112,7 +112,7 @@ cross-check, return the verdict synchronously.
 ```json
 {
   "document_b64": "string",       // required — JPEG | PNG | PDF, decoded ≤ 10MB
-  "document_type": "COMPANY"      // required — COMPANY | COMPANY_BRANCH | HOUSEHOLD
+  "document_type": "COMPANY"      // required — COMPANY | COMPANY_BRANCH
 }
 ```
 
@@ -165,10 +165,17 @@ attempted). Same shape as the KYC status plus `tax_code`, `business_name`.
 Per-attempt, terminal within the creating request (same as KYC):
 
 ```
-PENDING ──[OCR + registry + cross-checks pass]──► APPROVED
-PENDING ──[any business rule fails]─────────────► REJECTED
-PENDING ──[provider HTTP error / success=false]─► FAILED
+PENDING ──[OCR + registry + cross-checks pass]───────────► APPROVED
+PENDING ──[hard failure: unreadable doc, invalid tax
+           code, inactive business, rep-flag violation]──► REJECTED
+PENDING ──[borderline: low OCR confidence, registry
+           cross-check mismatch or incomplete data]──────► MANUAL_REVIEW
+PENDING ──[provider HTTP error / success=false]──────────► FAILED
 ```
+
+`MANUAL_REVIEW` (added v1.2 per the provider integration guide) is terminal
+for the attempt: an ops decision resolves it out-of-band. The FE shows the
+"under review" screen; retries are not blocked (only APPROVED 409s).
 
 Retry = new row; latest APPROVED ⇒ 409 on further attempts.
 
@@ -251,7 +258,7 @@ Retry = new row; latest APPROVED ⇒ 409 on further attempts.
 |---|---|---|---|
 | 1 | Which `business_status` values count as "active"? Need the enumeration from Datatrust (likely "Đang hoạt động" / "Active"); until then match case-insensitively on those two. | Phat → Datatrust | — |
 | 2 | Enable the representative-match rule (Rule 7) at launch, or run it in shadow mode (log, don't reject) first? Binds KYC↔KYB but may reject legitimate cases (rep ≠ account owner). | Edward | — |
-| 3 | `HOUSEHOLD` (hộ kinh doanh cá thể) — do FundLok SMEs include household businesses in the sandbox scope? The OCR X payload differs slightly (business_capital vs charter_capital; industries list). | Edward | — |
+| 3 | ~~`HOUSEHOLD` in scope?~~ Resolved v1.2: dropped per the provider integration guide (OCR X business verification covers COMPANY / COMPANY_BRANCH). | Edward | Dropped 2026-07-15 |
 | 4 | The loan flow gates on uploaded `KYC_BUSINESS_REG` documents (`app/lending/kyc.py`). Should a GVerify-approved KYB satisfy/auto-approve that document requirement? (The "should we store the cert" half is resolved: v1.1 retains it at `verification/KYB/<id>/`.) | Edward | — |
 | 5 | Fuzzy name matching (Rule 5): exact-normalised may reject legitimate OCR noise. Threshold-based similarity instead? Start exact, collect rejections, revisit. | Phat | — |
 | 6 | Cross-check against the FundLok project's declared `legal_name`/`tax_id` (projects table) — verify-at-KYB or verify-at-project-creation? | Edward | — |
@@ -284,3 +291,4 @@ Retry = new row; latest APPROVED ⇒ 409 on further attempts.
 |---|---|---|---|
 | 1.0 | 2026-07-14 | Phat | Initial draft |
 | 1.1 | 2026-07-14 | Phat | Retain the certificate in R2 (`verification/KYB/<id>/`) |
+| 1.2 | 2026-07-15 | Phat | Aligned to the provider integration guide: dropped HOUSEHOLD; added MANUAL_REVIEW outcome (low OCR confidence, registry cross-check mismatches/incomplete data); added tax-code echo and legal-representative cross-checks |

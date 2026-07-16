@@ -8,12 +8,16 @@ from app.core.base import Base
 
 # Attempt statuses (app-enforced; see spec state machine). Every attempt ends
 # terminal within the request that created it — PENDING only exists while the
-# provider calls are in flight or after a crash mid-request.
+# provider calls are in flight or after a crash mid-request. MANUAL_REVIEW
+# (KYB only) is terminal for the attempt: borderline results (low OCR
+# confidence, minor registry mismatches) park for an ops decision instead of
+# hard-rejecting.
 STATUS_PENDING = "PENDING"
 STATUS_APPROVED = "APPROVED"
 STATUS_REJECTED = "REJECTED"
 STATUS_FAILED = "FAILED"
-TERMINAL_STATUSES = {STATUS_APPROVED, STATUS_REJECTED, STATUS_FAILED}
+STATUS_MANUAL_REVIEW = "MANUAL_REVIEW"
+TERMINAL_STATUSES = {STATUS_APPROVED, STATUS_REJECTED, STATUS_FAILED, STATUS_MANUAL_REVIEW}
 
 
 class GVerifyVerification(Base):

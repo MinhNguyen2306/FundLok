@@ -141,13 +141,17 @@ async def test_kyb_verify_accepts_pdf_document(client, make_sme, mock_gverify_ky
     assert mock_gverify_kyb.last_ocr_kwargs["content_type"] == "application/pdf"
 
 
-async def test_kyb_verify_rejects_low_ocr_confidence(client, make_sme, mock_gverify_kyb):
+async def test_kyb_verify_low_ocr_confidence_goes_to_manual_review(
+    client, make_sme, mock_gverify_kyb
+):
+    """Low confidence is a borderline case — parked for ops, not rejected
+    (provider integration guide outcomes)."""
     sme = await make_sme()
     mock_gverify_kyb.ocr = _ocr_data(tax_code_confidence=0.41)
     resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
     assert resp.status_code == 201, resp.text
     data = resp.json()
-    assert data["status"] == "REJECTED"
+    assert data["status"] == "MANUAL_REVIEW"
     assert "confidence too low" in data["rejection_reason"]
     # Fail fast: the billable registry call must be skipped.
     assert mock_gverify_kyb.tax_calls == 0
@@ -190,19 +194,82 @@ async def test_kyb_verify_rejects_inactive_business(client, make_sme, mock_gveri
     assert "Dissolved" in data["rejection_reason"]
 
 
-async def test_kyb_verify_rejects_name_mismatch(client, make_sme, mock_gverify_kyb):
+async def test_kyb_verify_name_mismatch_goes_to_manual_review(client, make_sme, mock_gverify_kyb):
+    """A registry/certificate name divergence is adjudicated by a human —
+    normalization can't distinguish OCR noise from a genuinely different
+    company (guide: minor differences → manual review)."""
     sme = await make_sme()
     mock_gverify_kyb.tax = _tax_data(
         company={
+            "tax_code": "0312345678",
             "name": "CÔNG TY CỔ PHẦN KHÁC HOÀN TOÀN",
+            "business_status_en": "Active",
+            "representative": "NGUYEN VAN A",
+        }
+    )
+    resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "MANUAL_REVIEW"
+    assert "Business name differs" in data["rejection_reason"]
+
+
+async def test_kyb_verify_tax_code_echo_mismatch_goes_to_manual_review(
+    client, make_sme, mock_gverify_kyb
+):
+    sme = await make_sme()
+    mock_gverify_kyb.tax = _tax_data(
+        company={
+            "tax_code": "9999999999",
+            "name": "CÔNG TY TNHH FUNDLOK TEST",
+            "business_status_en": "Active",
+            "representative": "NGUYEN VAN A",
+        }
+    )
+    resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "MANUAL_REVIEW"
+    assert "Tax code differs" in data["rejection_reason"]
+
+
+async def test_kyb_verify_representative_mismatch_goes_to_manual_review(
+    client, make_sme, mock_gverify_kyb
+):
+    sme = await make_sme()
+    mock_gverify_kyb.tax = _tax_data(
+        company={
+            "tax_code": "0312345678",
+            "name": "CÔNG TY TNHH FUNDLOK TEST",
+            "business_status_en": "Active",
+            "representative": "TRAN THI B",
+        }
+    )
+    resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "MANUAL_REVIEW"
+    assert "Legal representative differs" in data["rejection_reason"]
+
+
+async def test_kyb_verify_incomplete_representative_goes_to_manual_review(
+    client, make_sme, mock_gverify_kyb
+):
+    """Registry returned no representative — incomplete data is a review
+    case per the guide, not an auto-approve."""
+    sme = await make_sme()
+    mock_gverify_kyb.tax = _tax_data(
+        company={
+            "tax_code": "0312345678",
+            "name": "CÔNG TY TNHH FUNDLOK TEST",
             "business_status_en": "Active",
         }
     )
     resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
     assert resp.status_code == 201, resp.text
     data = resp.json()
-    assert data["status"] == "REJECTED"
-    assert "does not match the tax registry" in data["rejection_reason"]
+    assert data["status"] == "MANUAL_REVIEW"
+    assert "incomplete" in data["rejection_reason"]
 
 
 async def test_kyb_verify_rep_match_rule(client, make_sme, mock_gverify_kyb, monkeypatch):
@@ -265,14 +332,16 @@ async def test_kyb_verify_rejects_bad_document(client, make_sme, mock_gverify_ky
     )
     assert resp.status_code == 400
     assert "JPEG, PNG or PDF" in resp.json()["detail"]
-    # Unknown document_type.
-    resp = await client.post(
-        "/gverify/kyb/verify",
-        json=_body(document_type="SOLE_TRADER"),
-        headers=sme["headers"],
-    )
-    assert resp.status_code == 400
-    assert "document_type" in resp.json()["detail"]
+    # Unknown document_type — including HOUSEHOLD, dropped per the provider
+    # integration guide (2026-07-15).
+    for bad_type in ("SOLE_TRADER", "HOUSEHOLD"):
+        resp = await client.post(
+            "/gverify/kyb/verify",
+            json=_body(document_type=bad_type),
+            headers=sme["headers"],
+        )
+        assert resp.status_code == 400, bad_type
+        assert "document_type" in resp.json()["detail"]
     assert mock_gverify_kyb.ocr_calls == 0
 
 

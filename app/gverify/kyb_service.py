@@ -27,6 +27,7 @@ from app.gverify import client, storage
 from app.gverify.models import (
     STATUS_APPROVED,
     STATUS_FAILED,
+    STATUS_MANUAL_REVIEW,
     STATUS_PENDING,
     STATUS_REJECTED,
     GVerifyKybVerification,
@@ -41,7 +42,10 @@ _JPEG_MAGIC = b"\xff\xd8\xff"
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _PDF_MAGIC = b"%PDF"
 
-DOCUMENT_TYPES = ("COMPANY", "COMPANY_BRANCH", "HOUSEHOLD")
+# Per the provider integration guide, OCR X business verification covers
+# company and branch certificates. (HOUSEHOLD dropped 2026-07-15 — resolves
+# spec Open Question 3.)
+DOCUMENT_TYPES = ("COMPANY", "COMPANY_BRANCH")
 
 # Registry statuses that count as an operating business (Open Question 1 —
 # matched case-insensitively until Datatrust confirms the enumeration).
@@ -80,12 +84,17 @@ def _normalize_name(value: str | None) -> str:
 
 
 def _ocr_rejection_reason(data: dict) -> str | None:
-    """OCR X pass rules (spec §6.3); returns a reason or None if OK."""
+    """Hard OCR failures (unreadable document) — REJECTED."""
     if not (data.get("name") or "").strip():
         return "Could not extract the business name from the certificate"
     if not (data.get("tax_code") or "").strip():
         return "Could not extract the tax code from the certificate"
+    return None
 
+
+def _ocr_review_reason(data: dict) -> str | None:
+    """Soft OCR signals — MANUAL_REVIEW per the provider integration guide
+    (low confidence is a review case, not a rejection)."""
     minimum = settings.GVERIFY_MIN_KYB_OCR_CONFIDENCE
     for field in ("name_confidence", "tax_code_confidence"):
         score = _as_float(data.get(field))
@@ -94,20 +103,45 @@ def _ocr_rejection_reason(data: dict) -> str | None:
     return None
 
 
-def _registry_rejection_reason(data: dict, ocr: dict) -> str | None:
-    """Tax Code Verify pass rules (spec §6.4–6.5); returns a reason or None."""
+def _registry_rejection_reason(data: dict) -> str | None:
+    """Hard registry failures — REJECTED."""
     if not data.get("is_valid"):
         return "Tax code is not valid in the state registry"
-
     company = data.get("company") or {}
     status = company.get("business_status_en") or company.get("business_status") or ""
     if status and status.strip().lower() not in _ACTIVE_STATUSES:
         return f"Business is not active in the state registry ({status})"
+    return None
 
-    ocr_name = _normalize_name(ocr.get("name"))
+
+def _cross_check_review_reason(ocr: dict, tax: dict) -> str | None:
+    """Certificate ↔ registry cross-checks (integration guide §5).
+
+    Mismatches and incomplete data here are MANUAL_REVIEW, not REJECTED:
+    Vietnamese names/codes survive OCR with minor differences, and a human
+    can adjudicate what strict string comparison cannot.
+    """
+    company = tax.get("company") or {}
+
+    registry_tax_code = (company.get("tax_code") or "").strip()
+    ocr_tax_code = (str(ocr.get("tax_code")) or "").strip()
+    if registry_tax_code and registry_tax_code != ocr_tax_code:
+        return "Tax code differs between the certificate and the registry"
+
     registry_name = _normalize_name(company.get("name"))
-    if registry_name and ocr_name != registry_name:
-        return "Certificate does not match the tax registry (business name differs)"
+    if registry_name and _normalize_name(ocr.get("name")) != registry_name:
+        return "Business name differs between the certificate and the registry"
+
+    registry_rep = _normalize_name(company.get("representative"))
+    ocr_reps = [
+        _normalize_name(rep.get("name"))
+        for rep in (ocr.get("representatives") or [])
+        if rep.get("name")
+    ]
+    if not registry_rep or not ocr_reps:
+        return "Legal representative details are incomplete"
+    if registry_rep not in ocr_reps:
+        return "Legal representative differs between the certificate and the registry"
     return None
 
 
@@ -202,13 +236,22 @@ async def run_kyb_verification(
     attempt.charter_capital = ocr.get("charter_capital") or ocr.get("business_capital")
     attempt.representatives = ocr.get("representatives")
 
+    # Decision flow per the provider integration guide: hard OCR failures
+    # reject; soft signals (low confidence) park for MANUAL_REVIEW — both
+    # before the (billable) registry call.
     reason = _ocr_rejection_reason(ocr)
     if reason is None:
         reason = await _rep_match_rejection_reason(db, user.id, ocr)
     if reason is not None:
-        # Fail fast: skip the (billable) registry call on an unusable OCR.
         attempt.status = STATUS_REJECTED
         attempt.rejection_reason = reason
+        await db.flush()
+        return attempt
+
+    review = _ocr_review_reason(ocr)
+    if review is not None:
+        attempt.status = STATUS_MANUAL_REVIEW
+        attempt.rejection_reason = review
         await db.flush()
         return attempt
 
@@ -223,12 +266,17 @@ async def run_kyb_verification(
     attempt.tax_transaction_code = tax.get("transaction_code")
     attempt.tax_data = tax
 
-    reason = _registry_rejection_reason(tax, ocr)
+    reason = _registry_rejection_reason(tax)
     if reason is not None:
         attempt.status = STATUS_REJECTED
         attempt.rejection_reason = reason
     else:
-        attempt.status = STATUS_APPROVED
+        review = _cross_check_review_reason(ocr, tax)
+        if review is not None:
+            attempt.status = STATUS_MANUAL_REVIEW
+            attempt.rejection_reason = review
+        else:
+            attempt.status = STATUS_APPROVED
     await db.flush()
     return attempt
 
