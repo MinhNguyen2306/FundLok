@@ -39,8 +39,10 @@ def _ocr_data(**overrides) -> dict:
         "company_address": "123 Lê Lợi, Quận 1, TP.HCM",
         "date_of_establishment": "01/01/2020",
         "charter_capital": "2.000.000.000 đồng",
+        # Live payload shape (2026-07-15): identity_number/position, not the
+        # documented id_number/title.
         "representatives": [
-            {"name": "NGUYEN VAN A", "id_number": "079203001234", "title": "Giám đốc"},
+            {"name": "NGUYEN VAN A", "identity_number": "079203001234", "position": "Giám đốc"},
         ],
     }
     data.update(overrides)
@@ -165,6 +167,51 @@ async def test_kyb_verify_rejects_missing_tax_code(client, make_sme, mock_gverif
     assert resp.json()["status"] == "REJECTED"
     assert "tax code" in resp.json()["rejection_reason"]
     assert mock_gverify_kyb.tax_calls == 0
+
+
+async def test_kyb_verify_declared_tax_code_covers_ocr_extraction_gap(
+    client, make_sme, mock_gverify_kyb
+):
+    """Live gap (2026-07-15): OCR returned tax_code:"" for a legible MST. An
+    SME-declared MST stands in — still bound by the registry name cross-check."""
+    sme = await make_sme()
+    mock_gverify_kyb.ocr = _ocr_data(tax_code="")
+    resp = await client.post(
+        "/gverify/kyb/verify",
+        json=_body(tax_code="0312345678"),
+        headers=sme["headers"],
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["status"] == "APPROVED"
+    assert data["tax_code"] == "0312345678"
+    assert mock_gverify_kyb.tax_calls == 1
+
+
+async def test_kyb_verify_ocr_tax_code_wins_over_declared(client, make_sme, mock_gverify_kyb):
+    sme = await make_sme()
+    resp = await client.post(
+        "/gverify/kyb/verify",
+        json=_body(tax_code="9999999999"),  # OCR extracted 0312345678 — that wins
+        headers=sme["headers"],
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["status"] == "APPROVED"
+    assert resp.json()["tax_code"] == "0312345678"
+
+
+async def test_kyb_verify_rejects_malformed_declared_tax_code(
+    client, make_sme, mock_gverify_kyb
+):
+    sme = await make_sme()
+    resp = await client.post(
+        "/gverify/kyb/verify",
+        json=_body(tax_code="not-a-tax-code"),
+        headers=sme["headers"],
+    )
+    assert resp.status_code == 400
+    assert "MST" in resp.json()["detail"]
+    assert mock_gverify_kyb.ocr_calls == 0
 
 
 async def test_kyb_verify_rejects_invalid_tax_code(client, make_sme, mock_gverify_kyb):

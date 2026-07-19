@@ -69,6 +69,12 @@ class KybVerifyRequest(BaseModel):
 
     document_b64: str
     document_type: str
+    # Optional declared MST — fallback when OCR fails to extract the tax code
+    # from the certificate (seen live 2026-07-15: legible "Mã số doanh nghiệp"
+    # line returned as tax_code:""). Untrusted, but bound by the registry
+    # name cross-check: the registry's official name for this MST must still
+    # match the OCR'd certificate name.
+    tax_code: str | None = None
 
 
 class KybVerifyResponse(BaseModel):

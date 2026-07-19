@@ -199,6 +199,7 @@ async def kyb_verify(
             current_user,
             document_b64=body.document_b64,
             document_type=body.document_type,
+            declared_tax_code=body.tax_code,
         )
     except ImageValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -231,8 +232,10 @@ async def kyb_verify(
         representatives=[
             KybRepresentative(
                 name=rep.get("name"),
-                id_number=rep.get("id_number"),
-                title=rep.get("title"),
+                # Live payloads use identity_number/position; the API doc said
+                # id_number/title — accept both.
+                id_number=rep.get("identity_number") or rep.get("id_number"),
+                title=rep.get("position") or rep.get("title"),
             )
             for rep in (attempt.representatives or [])
         ],

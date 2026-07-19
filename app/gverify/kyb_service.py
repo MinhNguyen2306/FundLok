@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import re
 import unicodedata
 
 from sqlalchemy import select
@@ -51,6 +52,23 @@ DOCUMENT_TYPES = ("COMPANY", "COMPANY_BRANCH")
 # matched case-insensitively until Datatrust confirms the enumeration).
 _ACTIVE_STATUSES = ("đang hoạt động", "active")
 
+# Vietnamese MST: 10 digits, optionally a -NNN branch suffix.
+_TAX_CODE_RE = re.compile(r"^\d{10}(-\d{3})?$")
+
+
+def _clean_declared_tax_code(value: str | None) -> str | None:
+    """Validate an SME-declared MST; None when absent, 400 when malformed."""
+    if value is None:
+        return None
+    cleaned = value.strip().replace(" ", "")
+    if not cleaned:
+        return None
+    if not _TAX_CODE_RE.match(cleaned):
+        raise ImageValidationError(
+            "tax_code must be a 10-digit Vietnamese MST (optionally -NNN for a branch)"
+        )
+    return cleaned
+
 
 def _validate_document(b64: str) -> tuple[bytes, str, str]:
     """Validate the certificate; returns (bytes, filename, content_type)."""
@@ -84,11 +102,11 @@ def _normalize_name(value: str | None) -> str:
 
 
 def _ocr_rejection_reason(data: dict) -> str | None:
-    """Hard OCR failures (unreadable document) — REJECTED."""
+    """Hard OCR failures (unreadable document) — REJECTED. The tax code is
+    checked separately in the flow: a declared MST can stand in for a missed
+    extraction."""
     if not (data.get("name") or "").strip():
         return "Could not extract the business name from the certificate"
-    if not (data.get("tax_code") or "").strip():
-        return "Could not extract the tax code from the certificate"
     return None
 
 
@@ -114,7 +132,7 @@ def _registry_rejection_reason(data: dict) -> str | None:
     return None
 
 
-def _cross_check_review_reason(ocr: dict, tax: dict) -> str | None:
+def _cross_check_review_reason(ocr: dict, tax: dict, queried_tax_code: str) -> str | None:
     """Certificate ↔ registry cross-checks (integration guide §5).
 
     Mismatches and incomplete data here are MANUAL_REVIEW, not REJECTED:
@@ -124,8 +142,7 @@ def _cross_check_review_reason(ocr: dict, tax: dict) -> str | None:
     company = tax.get("company") or {}
 
     registry_tax_code = (company.get("tax_code") or "").strip()
-    ocr_tax_code = (str(ocr.get("tax_code")) or "").strip()
-    if registry_tax_code and registry_tax_code != ocr_tax_code:
+    if registry_tax_code and registry_tax_code != queried_tax_code:
         return "Tax code differs between the certificate and the registry"
 
     registry_name = _normalize_name(company.get("name"))
@@ -165,8 +182,9 @@ async def _rep_match_rejection_reason(
     if not person_number:
         return "Complete personal identity verification (KYC) first"
 
+    # Live payloads use identity_number; the API doc said id_number — accept both.
     rep_ids = {
-        (rep.get("id_number") or "").strip()
+        (rep.get("identity_number") or rep.get("id_number") or "").strip()
         for rep in (ocr.get("representatives") or [])
     }
     if person_number.strip() not in rep_ids:
@@ -189,6 +207,7 @@ async def run_kyb_verification(
     *,
     document_b64: str,
     document_type: str,
+    declared_tax_code: str | None = None,
 ) -> GVerifyKybVerification:
     """Run the full one-shot KYB flow and return the terminal attempt row.
 
@@ -200,6 +219,7 @@ async def run_kyb_verification(
         raise ImageValidationError(
             f"document_type must be one of {', '.join(DOCUMENT_TYPES)}"
         )
+    declared = _clean_declared_tax_code(declared_tax_code)
     raw, filename, content_type = _validate_document(document_b64)
 
     attempt = GVerifyKybVerification(
@@ -227,7 +247,10 @@ async def run_kyb_verification(
 
     attempt.ocr_transaction_code = ocr.get("transaction_code")
     attempt.ocr_data = ocr
-    attempt.tax_code = ocr.get("tax_code")
+    # OCR extraction wins; the SME-declared MST is the fallback for the live
+    # extraction gap (legible "Mã số doanh nghiệp" returned as tax_code:"").
+    effective_tax_code = str(ocr.get("tax_code") or "").strip() or declared
+    attempt.tax_code = effective_tax_code
     attempt.business_name = ocr.get("name")
     attempt.business_type = ocr.get("business_type")
     attempt.company_address = ocr.get("company_address")
@@ -240,6 +263,11 @@ async def run_kyb_verification(
     # reject; soft signals (low confidence) park for MANUAL_REVIEW — both
     # before the (billable) registry call.
     reason = _ocr_rejection_reason(ocr)
+    if reason is None and not effective_tax_code:
+        reason = (
+            "Could not extract the tax code from the certificate — provide "
+            "your MST (Mã số doanh nghiệp) and try again"
+        )
     if reason is None:
         reason = await _rep_match_rejection_reason(db, user.id, ocr)
     if reason is not None:
@@ -256,7 +284,7 @@ async def run_kyb_verification(
         return attempt
 
     try:
-        tax = await client.taxcode_verify(tax_code=str(ocr.get("tax_code")).strip())
+        tax = await client.taxcode_verify(tax_code=effective_tax_code)
     except client.GVerifyError as exc:
         attempt.status = STATUS_FAILED
         attempt.rejection_reason = str(exc)
@@ -271,7 +299,7 @@ async def run_kyb_verification(
         attempt.status = STATUS_REJECTED
         attempt.rejection_reason = reason
     else:
-        review = _cross_check_review_reason(ocr, tax)
+        review = _cross_check_review_reason(ocr, tax, effective_tax_code)
         if review is not None:
             attempt.status = STATUS_MANUAL_REVIEW
             attempt.rejection_reason = review
