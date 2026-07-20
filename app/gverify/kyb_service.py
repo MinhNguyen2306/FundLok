@@ -132,6 +132,11 @@ def _registry_rejection_reason(data: dict) -> str | None:
     return None
 
 
+# Provider error codes (KYB plan §10.1) that mean "this business isn't in the
+# registry" — a REJECTED verdict, not a transport failure (502).
+_INVALID_TAX_CODES = {"ERROR_23"}
+
+
 def _cross_check_review_reason(ocr: dict, tax: dict, queried_tax_code: str) -> str | None:
     """Certificate ↔ registry cross-checks (integration guide §5).
 
@@ -208,6 +213,7 @@ async def run_kyb_verification(
     document_b64: str,
     document_type: str,
     declared_tax_code: str | None = None,
+    declared_license_code: str | None = None,
 ) -> GVerifyKybVerification:
     """Run the full one-shot KYB flow and return the terminal attempt row.
 
@@ -220,6 +226,7 @@ async def run_kyb_verification(
             f"document_type must be one of {', '.join(DOCUMENT_TYPES)}"
         )
     declared = _clean_declared_tax_code(declared_tax_code)
+    declared_license = (declared_license_code or "").strip() or None
     raw, filename, content_type = _validate_document(document_b64)
 
     attempt = GVerifyKybVerification(
@@ -251,6 +258,15 @@ async def run_kyb_verification(
     # extraction gap (legible "Mã số doanh nghiệp" returned as tax_code:"").
     effective_tax_code = str(ocr.get("tax_code") or "").strip() or declared
     attempt.tax_code = effective_tax_code
+    # license_code: OCR value → declared → fall back to the tax code. The
+    # working tax-verify contract wants it (KYB plan §7.3); for modern VN
+    # companies mã số doanh nghiệp doubles as the licence code, so the tax-code
+    # fallback keeps the call working when no distinct code is supplied.
+    # (Provider Q1/Q2: is license_code mandatory and how does it differ.)
+    effective_license_code = (
+        str(ocr.get("license_code") or "").strip() or declared_license or effective_tax_code
+    )
+    attempt.license_code = effective_license_code
     attempt.business_name = ocr.get("name")
     attempt.business_type = ocr.get("business_type")
     attempt.company_address = ocr.get("company_address")
@@ -284,8 +300,17 @@ async def run_kyb_verification(
         return attempt
 
     try:
-        tax = await client.taxcode_verify(tax_code=effective_tax_code)
+        tax = await client.taxcode_verify(
+            tax_code=effective_tax_code, license_code=effective_license_code
+        )
     except client.GVerifyError as exc:
+        # An "invalid tax code" provider error is a business rejection, not a
+        # transport failure — don't surface it as a 502 (KYB plan §10.1).
+        if exc.code in _INVALID_TAX_CODES:
+            attempt.status = STATUS_REJECTED
+            attempt.rejection_reason = "Tax code is not valid in the state registry"
+            await db.flush()
+            return attempt
         attempt.status = STATUS_FAILED
         attempt.rejection_reason = str(exc)
         await db.flush()
@@ -300,6 +325,8 @@ async def run_kyb_verification(
         attempt.rejection_reason = reason
     else:
         review = _cross_check_review_reason(ocr, tax, effective_tax_code)
+        if review is None:
+            review = _license_cross_check_review_reason(effective_license_code, tax)
         if review is not None:
             attempt.status = STATUS_MANUAL_REVIEW
             attempt.rejection_reason = review
@@ -307,6 +334,16 @@ async def run_kyb_verification(
             attempt.status = STATUS_APPROVED
     await db.flush()
     return attempt
+
+
+def _license_cross_check_review_reason(attempt_license: str, tax: dict) -> str | None:
+    """Compare the declared/OCR licence code against the registry's, when the
+    registry returns one. Mismatch → MANUAL_REVIEW (KYB plan §9 / Stage F)."""
+    company = tax.get("company") or {}
+    registry_license = (company.get("license_code") or "").strip()
+    if registry_license and registry_license != attempt_license:
+        return "Licence code differs between the certificate and the registry"
+    return None
 
 
 def business_status(attempt: GVerifyKybVerification) -> str | None:

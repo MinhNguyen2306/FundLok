@@ -71,6 +71,7 @@ TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 # rather than requiring a second env var. A no-op .replace() if DATABASE_URL
 # is already a sync URL.
 ALEMBIC_DATABASE_URL = TEST_DATABASE_URL.replace("+asyncpg", "+psycopg2")
+ALEMBIC_COMMAND = [sys.executable, "-m", "alembic"]
 
 
 def iter_endpoint_routes(routes):
@@ -112,7 +113,7 @@ def _migrate_schema():
 
     env = {**os.environ, "DATABASE_URL": ALEMBIC_DATABASE_URL}
     result = subprocess.run(
-        ["alembic", "upgrade", "head"],
+        [*ALEMBIC_COMMAND, "upgrade", "head"],
         cwd=str(ROOT),
         env=env,
         capture_output=True,

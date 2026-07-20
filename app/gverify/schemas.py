@@ -75,6 +75,10 @@ class KybVerifyRequest(BaseModel):
     # name cross-check: the registry's official name for this MST must still
     # match the OCR'd certificate name.
     tax_code: str | None = None
+    # Optional declared business-registration / licence code — part of the
+    # tax-verify working contract (KYB plan §7.3). OCR rarely returns it, so
+    # the SME may supply it; falls back to the tax code when absent.
+    license_code: str | None = None
 
 
 class KybVerifyResponse(BaseModel):
@@ -85,6 +89,7 @@ class KybVerifyResponse(BaseModel):
     is_approved: bool
     rejection_reason: str | None = None
     tax_code: str | None = None
+    license_code: str | None = None
     business_name: str | None = None
     business_type: str | None = None
     business_status: str | None = None  # from the tax registry, when reached

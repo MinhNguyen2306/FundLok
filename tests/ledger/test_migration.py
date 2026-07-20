@@ -11,7 +11,7 @@ import psycopg2
 import pytest
 from sqlalchemy.engine import make_url
 
-from conftest import ALEMBIC_DATABASE_URL, ROOT
+from conftest import ALEMBIC_COMMAND, ALEMBIC_DATABASE_URL, ROOT
 
 MIGRATION_CHECK_DB = "test_db_migration_check"
 
@@ -56,8 +56,8 @@ def test_migration_upgrade_and_downgrade_clean():
         env = {**os.environ, "DATABASE_URL": migration_url}
 
         def run(*args):
-            result = subprocess.run(["alembic", *args], cwd=str(ROOT), env=env, capture_output=True, text=True)
-            assert result.returncode == 0, f"alembic {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}"
+            result = subprocess.run([*ALEMBIC_COMMAND, *args], cwd=str(ROOT), env=env, capture_output=True, text=True)
+            assert result.returncode == 0, f"{' '.join(ALEMBIC_COMMAND + list(args))} failed:\n{result.stdout}\n{result.stderr}"
             return result
 
         run("upgrade", "head")

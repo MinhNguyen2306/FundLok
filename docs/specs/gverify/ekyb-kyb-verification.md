@@ -155,7 +155,7 @@ attempted). Same shape as the KYC status plus `tax_code`, `business_name`.
   eKYC endpoints where it is a JSON field). No base64 variant is documented —
   the backend client must send multipart (httpx `files=`; sending multipart
   does not require `python-multipart`, which is only for *receiving* it).
-- `POST {base}/ekyb/api/taxcode/verify` — JSON `{ID, tax_type: "COMPANY", code}`.
+- `POST {base}/ekyb/api/taxcode/verify` — JSON `{code, id, license_code, tax_type: "COMPANY"}`. Contract is the VERIFIED working sample, not the v2.5.1 doc (KYB plan §7.3): field is lowercase `id` (uppercase `ID` → ERROR_01) and `license_code` is included. `ERROR_23` (invalid tax code) is a REJECTED verdict, not a 502.
 - Both return the `{success, error, data}` envelope; same error handling as KYC.
 
 ---
@@ -292,3 +292,4 @@ Retry = new row; latest APPROVED ⇒ 409 on further attempts.
 | 1.0 | 2026-07-14 | Phat | Initial draft |
 | 1.1 | 2026-07-14 | Phat | Retain the certificate in R2 (`verification/KYB/<id>/`) |
 | 1.2 | 2026-07-15 | Phat | Aligned to the provider integration guide: dropped HOUSEHOLD; added MANUAL_REVIEW outcome (low OCR confidence, registry cross-check mismatches/incomplete data); added tax-code echo and legal-representative cross-checks |
+| 1.3 | 2026-07-20 | Phat | Tax-verify uses the VERIFIED working contract (lowercase `id` + required `license_code`, KYB plan §7.3), fixing ERROR_01; added `license_code` column, declared-fallback, cross-check, and a request contract test; ERROR_23 → REJECTED not 502 |

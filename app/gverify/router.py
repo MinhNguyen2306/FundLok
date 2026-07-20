@@ -200,6 +200,7 @@ async def kyb_verify(
             document_b64=body.document_b64,
             document_type=body.document_type,
             declared_tax_code=body.tax_code,
+            declared_license_code=body.license_code,
         )
     except ImageValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -226,6 +227,7 @@ async def kyb_verify(
         is_approved=attempt.is_approved,
         rejection_reason=attempt.rejection_reason,
         tax_code=attempt.tax_code,
+        license_code=attempt.license_code,
         business_name=attempt.business_name,
         business_type=attempt.business_type,
         business_status=kyb_service.business_status(attempt),

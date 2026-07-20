@@ -100,6 +100,7 @@ class GVerifyKybVerification(Base):
 
     # Key company fields extracted by OCR X and confirmed by the tax registry.
     tax_code = Column(Text, nullable=True, index=True)
+    license_code = Column(Text, nullable=True)
     business_name = Column(Text, nullable=True)
     business_type = Column(Text, nullable=True)
     company_address = Column(Text, nullable=True)

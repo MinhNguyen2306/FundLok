@@ -80,6 +80,7 @@ def mock_gverify_kyb(monkeypatch):
             self.ocr_calls = 0
             self.tax_calls = 0
             self.last_ocr_kwargs = None
+            self.last_tax_kwargs = None
 
     ctl = _Controller()
 
@@ -92,6 +93,7 @@ def mock_gverify_kyb(monkeypatch):
 
     async def fake_tax(**kwargs):
         ctl.tax_calls += 1
+        ctl.last_tax_kwargs = kwargs
         if isinstance(ctl.tax, Exception):
             raise ctl.tax
         return ctl.tax
@@ -430,3 +432,78 @@ async def test_kyb_status_not_found_when_never_attempted(client, make_sme):
     sme = await make_sme()
     resp = await client.get("/gverify/kyb/status", headers=sme["headers"])
     assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Provider contract test (KYB plan §7.3 / §13.1) — guards the verified tax
+# request shape so a refactor can't silently revert to the (broken) doc schema.
+# --------------------------------------------------------------------------- #
+
+
+async def test_taxcode_verify_uses_lowercase_id_and_license_code(monkeypatch):
+    """The outgoing tax-verify body MUST use lowercase `id` and include
+    `license_code` (the working contract). Uppercase `ID` yields the live
+    ERROR_01 "Id is null or empty" — this test fails if that regresses."""
+    from app.gverify import client as gclient
+
+    captured: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"success": True, "data": {}}
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            captured["url"] = url
+            captured["body"] = json
+            return _Resp()
+
+    monkeypatch.setattr(gclient.settings, "GVERIFY_BASE_URL", "https://provider.test")
+    monkeypatch.setattr(gclient.settings, "GVERIFY_PARTNER_CODE", "TPVDEMO")
+    monkeypatch.setattr(gclient.settings, "GVERIFY_API_KEY", "test-key")
+    monkeypatch.setattr(gclient.httpx, "AsyncClient", _FakeAsyncClient)
+
+    await gclient.taxcode_verify(tax_code="1501167629", license_code="41M8041297")
+
+    body = captured["body"]
+    assert "id" in body and body["id"] == "1501167629"  # lowercase, per working contract
+    assert "ID" not in body  # the doc's uppercase key must NOT be sent
+    assert body["license_code"] == "41M8041297"  # required by the working contract
+    assert body["tax_type"] == "COMPANY"
+    assert body["code"] == "TPVDEMO"  # partner code travels in the body
+
+
+async def test_kyb_verify_forwards_declared_license_code(client, make_sme, mock_gverify_kyb):
+    """A declared license_code reaches the provider call verbatim."""
+    sme = await make_sme()
+    resp = await client.post(
+        "/gverify/kyb/verify",
+        json=_body(tax_code="0312345678", license_code="41M8041297"),
+        headers=sme["headers"],
+    )
+    assert resp.status_code == 201, resp.text
+    assert mock_gverify_kyb.last_tax_kwargs["license_code"] == "41M8041297"
+    assert resp.json()["license_code"] == "41M8041297"
+
+
+async def test_kyb_verify_invalid_tax_code_error_rejects_not_502(client, make_sme, mock_gverify_kyb):
+    """ERROR_23 from the registry is a business rejection, not a transport
+    failure — it must be 201 REJECTED, never 502 (KYB plan §10.1)."""
+    sme = await make_sme()
+    mock_gverify_kyb.tax = GVerifyError("invalid tax code", code="ERROR_23")
+    resp = await client.post("/gverify/kyb/verify", json=_body(), headers=sme["headers"])
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["status"] == "REJECTED"
+    assert "not valid in the state registry" in resp.json()["rejection_reason"]

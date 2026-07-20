@@ -138,11 +138,18 @@ async def ocrx_decode(
     return _unwrap(resp, path)
 
 
-async def taxcode_verify(*, tax_code: str) -> dict[str, Any]:
+async def taxcode_verify(*, tax_code: str, license_code: str) -> dict[str, Any]:
     """POST /ekyb/api/taxcode/verify — check a tax code against the state
     registry (Tổng Cục Thuế). Returns ``is_valid`` plus the registered
-    ``company`` profile (name, address, business_status, representative)."""
+    ``company`` profile (name, address, business_status, representative).
+
+    Contract source-of-truth is the VERIFIED working sample, NOT the v2.5.1
+    doc (KYB_Agentic_Implementation_Plan §2.2/§7.3): the field is lowercase
+    ``id`` (the doc's uppercase ``ID`` yields ERROR_01 "Id is null or empty"),
+    and ``license_code`` is part of the working request. ``code`` is injected
+    into the body by ``_post``.
+    """
     return await _post(
         "/ekyb/api/taxcode/verify",
-        {"ID": tax_code, "tax_type": "COMPANY"},
+        {"id": tax_code, "license_code": license_code, "tax_type": "COMPANY"},
     )
