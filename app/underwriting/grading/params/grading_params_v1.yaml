@@ -1,0 +1,407 @@
+# FundLok Grading Engine — canonical parameters
+#
+# SOURCE OF TRUTH. Extracted verbatim from `FundLok formula factors v0.xlsx`,
+# tab `Scoring From Raw` (production columns AI..BO), and validated against all
+# 10,000 rows of that tab to a relative tolerance of 1e-7.
+#
+# DO NOT retype, round, reformat or "tidy" any number in this file. Every
+# constant below is load-bearing. The v0.2 requirements PDF mis-transcribed the
+# sigmoid form and made six factors appear broken; this file exists so that
+# never happens again.
+#
+# CURVE FORM (all sigmoid factors):
+#
+#     score = min(100, max(0, upper / (1 + exp(sign * (steepness * x - intercept)))))
+#
+#   where sign = +1 when `decreasing: true`  (higher raw value = worse)
+#         sign = -1 when `decreasing: false` (higher raw value = better)
+#
+#   NOTE: `intercept` is NOT a midpoint. The true midpoint is intercept/steepness.
+#   The requirements doc put the intercept in a column labelled "Midpoint",
+#   which is the origin of the transcription bug. Do not "correct" this by
+#   substituting a midpoint form.
+#
+# Every factor clamps to [0, 100]. Several `upper` values exceed 100
+# (curve-fit artifacts); the clamp neutralises them. Do not change them to 100.
+
+engine_version: "1.0.0"
+params_version: "wb-v0-20260728"
+source_workbook: "FundLok formula factors v0.xlsx"
+source_tab: "Scoring From Raw"
+factor_count: 22
+
+# ---------------------------------------------------------------------------
+# Derived raw metrics — computed from the ingested fields before scoring.
+# Written as formulas for humans; see HANDOFF-G1 §4 for the required signatures.
+# ---------------------------------------------------------------------------
+derivations:
+  revenue_y1: "sum(m13..m24)"
+  avg_monthly_revenue: "revenue_y1 / 12"
+  total_cost: "cogs_y1 + fixed_cost_y1 + variable_cost_excl_cogs_y1"
+  avg_monthly_cost: "total_cost / 12"
+  profit: "revenue_y1 - total_cost"
+
+  # Percentages, expressed 0-100 (NOT 0-1)
+  gross_margin_pct: "(revenue_y1 - cogs_y1) / revenue_y1 * 100"
+  contribution_margin_pct: "(revenue_y1 - variable_cost_excl_cogs_y1 - cogs_y1) / revenue_y1 * 100"
+  operating_margin_pct: "(revenue_y1 - total_cost) / revenue_y1 * 100"
+  cost_flexibility_pct: "(cogs_y1 + variable_cost_excl_cogs_y1) / total_cost * 100"
+
+  # NOTE: "total-duration revenue" is average monthly revenue x term,
+  # NOT the trailing `duration` actual months. Confirmed against the workbook.
+  loan_revenue_ratio: "loan_size / (avg_monthly_revenue * duration_months)"
+  scsr_ratio: "loan_size / ((avg_monthly_revenue - avg_monthly_cost) * duration_months)"
+
+  # Population standard deviation (STDEV.P), NOT sample (STDEV.S). Trailing 12.
+  revenue_volatility_cv: "pstdev(m13..m24) / mean(m13..m24)"
+
+  # Mean of 10 overlapping 3-month windows vs the same window 12 months earlier.
+  # Result is a DECIMAL fraction; the scoring step multiplies by 100.
+  # window k (k = 0..9):  (sum(m[13+k..15+k]) - sum(m[1+k..3+k])) / sum(m[1+k..3+k])
+  revenue_trend_decimal: "mean of 10 windows, see comment"
+
+  seasonality_ratio: "max(m13..m24) / min(m13..m24)"
+
+  # CRR, RRI, TCP are supplied on a 0-100 scale. RTI is therefore 0-100 and the
+  # scoring step divides by 100.
+  rti: "0.5 * crr + 0.3 * rri + 0.2 * tcp"
+
+# ---------------------------------------------------------------------------
+# Factor definitions
+# ---------------------------------------------------------------------------
+factors:
+
+  # --- Group 1: Business Cashflow Quality (BCQ) -----------------------------
+  - id: 1
+    key: gross_margin
+    group: bcq
+    kind: sigmoid
+    input: gross_margin_pct
+    input_unit: percent_0_100
+    upper: 100
+    steepness: 0.168
+    intercept: 3.024          # = 0.168 * 18; true midpoint 18
+    decreasing: false
+
+  - id: 2
+    key: contribution_margin
+    group: bcq
+    kind: sigmoid
+    input: contribution_margin_pct
+    input_unit: percent_0_100
+    upper: 100
+    steepness: 0.13
+    intercept: 3.77           # = 0.13 * 29; true midpoint 29
+    decreasing: false
+
+  - id: 3
+    key: operating_margin
+    group: bcq
+    kind: sigmoid
+    input: operating_margin_pct
+    input_unit: percent_0_100
+    upper: 100
+    steepness: 0.24
+    intercept: 0.768          # = 0.24 * 3.2; true midpoint 3.2
+    decreasing: false
+
+  - id: 4
+    key: cost_flexibility
+    group: bcq
+    kind: sigmoid
+    input: cost_flexibility_pct
+    input_unit: percent_0_100
+    upper: 100
+    steepness: 0.08
+    intercept: 3.76           # = 0.08 * 47; true midpoint 47
+    decreasing: false
+
+  # WARNING: these two differ from BOTH the requirements PDF and the workbook's
+  # own `Cashflow` reference tab. The `Cashflow` tab holds abandoned earlier
+  # fits that do not match their own band tables. These are the production values.
+  - id: 5
+    key: loan_revenue
+    group: bcq
+    kind: sigmoid
+    input: loan_revenue_ratio
+    input_unit: ratio
+    upper: 103.50079
+    steepness: 5.57453
+    intercept: 3.65945        # true midpoint 0.65645
+    decreasing: true
+
+  - id: 6
+    key: scsr
+    group: bcq
+    kind: sigmoid
+    input: scsr_ratio
+    input_unit: ratio
+    upper: 140.93813
+    steepness: 0.468868
+    intercept: 1.10159        # true midpoint 2.34884
+    decreasing: true
+    # profit <= 0 makes scsr_ratio negative or undefined. The workbook has no
+    # rule for this. See HANDOFF-G1 §7 — engine must raise, not silently score.
+
+  # --- Group 2: Revenue Stability & Growth (RSG) ----------------------------
+  - id: 7
+    key: revenue_volatility
+    group: rsg
+    kind: sigmoid
+    input: revenue_volatility_cv
+    input_unit: ratio
+    upper: 109.0518
+    steepness: 7.36309
+    intercept: 2.66941        # true midpoint 0.36253
+    decreasing: true
+
+  - id: 8
+    key: revenue_trend
+    group: rsg
+    kind: sigmoid
+    input: revenue_trend_decimal
+    input_unit: decimal_scaled_by_100   # engine multiplies input by 100
+    scale_input_by: 100
+    upper: 105.10282
+    steepness: 0.0635746
+    intercept: 0.283573      # true midpoint 4.46045 (percent)
+    decreasing: false
+
+  - id: 9
+    key: seasonality
+    group: rsg
+    kind: sigmoid
+    input: seasonality_ratio
+    input_unit: ratio
+    upper: 168.61289
+    steepness: 0.79488
+    intercept: 1.16359        # true midpoint 1.46385
+    decreasing: true
+
+  # Both Top 1 and Top 3 use the linear map in production. The requirements PDF
+  # assigns Top 3 a sigmoid (105 / -0.07 / 3.99); the production column does NOT
+  # use it. Do not implement that sigmoid.
+  - id: 10
+    key: conc_top1
+    group: rsg
+    kind: linear
+    input: conc_top1_pct
+    input_unit: percent_0_100
+    formula: "100 - x"
+    bonus: true
+
+  - id: 11
+    key: conc_top3
+    group: rsg
+    kind: linear
+    input: conc_top3_pct
+    input_unit: percent_0_100
+    formula: "100 - x"
+    bonus: true
+
+  - id: 12
+    key: revenue_type
+    group: rsg
+    kind: sigmoid
+    input: rti
+    input_unit: percent_0_100
+    scale_input_by: 0.01      # engine divides by 100
+    upper: 102.36315
+    steepness: 6.23985
+    intercept: 2.558          # true midpoint 0.40995 on a 0-1 RTI
+    decreasing: false
+    bonus: true
+
+  # --- Group 3: Sector & Structural Risk ------------------------------------
+  - id: 13
+    key: sector_growth
+    group: sector
+    kind: sigmoid
+    input: sector_cagr_pct
+    input_unit: percent_0_100
+    scale_input_by: 0.01      # engine divides by 100 -> decimal CAGR
+    upper: 100
+    steepness: 20.343
+    intercept: 0.135384       # true midpoint 0.006655 (decimal CAGR)
+    decreasing: false
+
+  # Factors 14-19 are AI-graded: supplied to the engine as committed 0-100
+  # scores. The engine NEVER calls an AI service. See HANDOFF-G1 §2.
+  - {id: 14, key: regulatory,      group: sector, kind: supplied}
+  - {id: 15, key: input_cost_vol,  group: sector, kind: supplied}
+  - {id: 16, key: cyclicality,     group: sector, kind: supplied}
+  - {id: 17, key: competitor,      group: sector, kind: supplied}
+  - {id: 18, key: macro,           group: sector, kind: supplied}
+  - {id: 19, key: uncontrollable,  group: sector, kind: supplied}
+
+  # --- Group 4: Behavioral & Governance -------------------------------------
+  - id: 20
+    key: cic
+    group: behavioral
+    kind: sigmoid
+    input: cic_score
+    input_unit: cic_150_750
+    upper: 102.19808
+    steepness: 0.0139371
+    intercept: 8.52444        # true midpoint 611.63
+    decreasing: false
+    # This is a SIGMOID, not the lookup band in the requirements PDF.
+    # Observed range in the golden set: 442-750. Generator spec says 150-750.
+
+  - id: 21
+    key: owner_withdrawal
+    group: behavioral
+    kind: cubic
+    input: owner_withdrawal_raw
+    input_unit: ratio
+    # score = min(100, max(0, a*x^3 + b*x^2 + c*x + d))
+    # This is a CUBIC POLYNOMIAL, not a lookup band.
+    a: 122.05387
+    b: -253.24675
+    c: 27.67557
+    d: 102.65873
+    bonus: true
+    # NOTE: the golden set supplies owner_withdrawal already as a 0-100 score,
+    # so the cubic is unexercised by the fixture. See HANDOFF-G1 §7.
+
+  - id: 22
+    key: founder
+    group: behavioral
+    kind: supplied
+    bonus: true
+
+# ---------------------------------------------------------------------------
+# Group roll-up
+#
+# Bonus factors contribute score/20 — i.e. 5% of the factor score as points
+# added on top of the weighted core. Premiums are NOT clamped in the workbook.
+# Empirically none exceeds 100 across all 10,000 rows (max: bcq 98.46,
+# rsg 92.37, sector 82.65, behavioral 96.03), so a defensive clamp is a no-op
+# on the golden set. See HANDOFF-G1 §7 before adding one.
+# ---------------------------------------------------------------------------
+rollup:
+  bcq:
+    core:
+      gross_margin: 0.20
+      contribution_margin: 0.20
+      operating_margin: 0.20
+      cost_flexibility: 0.20
+      loan_revenue: 0.10
+      scsr: 0.10
+    bonus: {}
+
+  rsg:
+    # NOTE: seasonality carries 1/4, NOT 1/3. The requirements PDF says all
+    # three core factors are 1/3. They are not. Core sums to 0.916666...,
+    # not 1.0. This is deliberate in the workbook — do not "fix" it.
+    core:
+      revenue_volatility: 0.3333333333333333   # 1/3
+      revenue_trend: 0.3333333333333333        # 1/3
+      seasonality: 0.25                        # 1/4
+    bonus:
+      conc_top1: 0.05     # /20
+      conc_top3: 0.05     # /20
+      revenue_type: 0.05  # /20
+
+  sector:
+    core:
+      sector_growth: 0.14285714285714285   # 1/7
+      regulatory: 0.14285714285714285
+      input_cost_vol: 0.14285714285714285
+      cyclicality: 0.14285714285714285
+      competitor: 0.14285714285714285
+      macro: 0.14285714285714285
+      uncontrollable: 0.14285714285714285
+    bonus: {}
+
+  behavioral:
+    # CIC carries FULL weight (1.0), not a share. Tax Discipline is absent from
+    # the workbook roll-up entirely — its removal in requirements v0.2 was
+    # correct. Requirements §3.4 still says "CIC + Tax Discipline as the core";
+    # that line is stale. Data Reliability is likewise excluded.
+    core:
+      cic: 1.0
+    bonus:
+      owner_withdrawal: 0.05  # /20
+      founder: 0.05           # /20
+
+final_grade:
+  bcq: 0.40
+  rsg: 0.25
+  sector: 0.25
+  behavioral: 0.10
+
+# ---------------------------------------------------------------------------
+# Pricing and repayment
+#
+# The workbook's pricing columns are computed on a STALE, DIFFERENT dataset
+# from its grade columns (9,938 of 10,000 rows disagree on loan size and term),
+# so the golden set canNOT validate this section. The arithmetic is trivial and
+# comes from requirements §4.2-4.3. Do not attempt to reconcile pricing against
+# the workbook. See HANDOFF-G1 §7.
+# ---------------------------------------------------------------------------
+pricing:
+  # bank_rate_pct is per-application config, NOT a constant. The workbook's Raw
+  # tab varies it 8.1-13.6 across rows. Default 12.0 per requirements §2.4.
+  bank_rate_default_pct: 12.0
+  rate_cap_pct: 20.0
+  formula: "min(rate_cap_pct, bank_rate_pct + (rate_cap_pct - bank_rate_pct) * (100 - final_grade) / 100)"
+
+repayment:
+  working_days_per_month: 21
+  working_days_per_year: 252
+  target_payment: "loan_size * (1 + rate_pct/100 * duration_months/12)"
+  target_daily_repayment: "target_payment / (duration_months * working_days_per_month)"
+  avg_daily_revenue: "revenue_y1 / working_days_per_year"
+  daily_repayment_rate: "target_daily_repayment / avg_daily_revenue"
+
+# ---------------------------------------------------------------------------
+# Knockout gates
+# ---------------------------------------------------------------------------
+gates:
+  - {id: 1, key: operating_history,     severity: soft, rule: "operating_months < 24"}
+  - {id: 2, key: history_vs_term,       severity: soft, rule: "duration_months > 0.25 * operating_months"}
+  # GATE 3 IS DISABLED. At the specified thresholds it fires on 98.4% (>=3) or
+  # 95.2% (>=4) of the golden set. Median SME has 8 of 22 factors below 50.
+  # Requires a business decision before enabling. See HANDOFF-G1 §7.
+  - {id: 3, key: low_factor_count,      severity: soft, rule: "count(factor_scores < 50) >= threshold",
+     enabled: false, threshold: null}
+  # Gate 4 is enforced in the application UI, not the engine (requirements §3.5).
+  - {id: 4, key: first_loan_tenor,      severity: none, rule: "enforced_in_ui"}
+  - {id: 5, key: excluded_industry,     severity: hard, rule: "industry in excluded_industries"}
+  - {id: 6, key: kyc_aml,               severity: hard, rule: "kyc_aml_passed is false or fraud_flags non-empty"}
+  # GATE 7 SHIPS DISABLED until the CIC scale is confirmed with the business
+  # CIC report layout. It is a final, non-overridable reject.
+  - {id: 7, key: cic_floor,             severity: hard, rule: "cic_score <= 500", enabled: false}
+  - {id: 8, key: daily_repayment_rate,  severity: soft, rule: "daily_repayment_rate >= 0.30"}
+
+excluded_industries: [gambling, alcohol, tobacco, weapons, defence]
+
+supported_industries:
+  - Retail Trade
+  - Construction Materials
+  - Food & Beverage
+  - Agriculture & Farming
+  - IT Services
+  - Professional Services
+  - Tourism & Hospitality
+  - Education & Training
+  - Electronics Retail
+  - Textile & Garment
+  - Healthcare & Pharmacy
+  - Beauty & Personal Care
+  - Furniture & Woodwork
+  - Logistics & Transport
+  - Manufacturing
+
+company_sizes:
+  micro:  {min: 1,  max: 10}
+  small:  {min: 11, max: 50}
+  medium: {min: 51, max: 200}
+
+loan_constraints:
+  min_vnd: 200000000
+  max_vnd: 5000000000
+  allowed_durations_months: [3, 6, 9, 12]
+
+decision_states: [APPROVED, REVIEW, REJECT, INSUFFICIENT_DATA, AI_PENDING]
