@@ -2,3 +2,4 @@ mcp>=1.0.0
 sentence-transformers>=3.0.0
 pinecone>=5.0.0
 python-dotenv>=1.0.0
+pypdf>=4.0.0
