@@ -31,3 +31,5 @@ pydantic[email]
 google-cloud-storage
 
 boto3>=1.34.0   # Cloudflare R2 (S3-compatible) presigned uploads
+
+pyyaml>=6.0     # grading engine params loader (app/underwriting/grading/params.py)
