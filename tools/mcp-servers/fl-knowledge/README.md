@@ -1,10 +1,10 @@
 # fl-knowledge MCP server
 
-An MCP server that indexes FundLok's own markdown knowledge base —
-`CLAUDE.md`, `AGENTS.md`, `README.md`, and everything under `docs/` (specs,
-ADRs, handoffs, PR writeups) — and exposes a `search_fl_docs` tool so Claude
-can pull the one relevant section instead of re-reading whole files into
-context every session.
+An MCP server that indexes FundLok's knowledge base — `CLAUDE.md`,
+`AGENTS.md`, `README.md`, and everything under `docs/` (specs, ADRs,
+handoffs, PR writeups, and external source documents like regulations) —
+and exposes a `search_fl_docs` tool so Claude can pull the one relevant
+section instead of re-reading whole files into context every session.
 
 ## Architecture
 
@@ -17,8 +17,12 @@ context every session.
 - **Retrieval is semantic, not keyword-based** — a query like "how do lenders
   get paid back" can match a section that only says "pro-rata distributions",
   with zero literal word overlap. (An earlier version of this server used
-  BM25 keyword search; this replaces it. See ADR-003 in `docs/adr/` for why
+  BM25 keyword search; this replaces it. See ADR-006 in `docs/adr/` for why
   and when that tradeoff was made.)
+- **Two source formats:** `.md` files are chunked on headings; `.pdf` files
+  are chunked per-page into overlapping character windows sized for the
+  embedding model's context limit (see ADR-007). External source documents
+  (regulations, standards) belong under `docs/regulatory/`.
 
 `build_index.py` and `server.py` never disagree about what a "chunk" is —
 both import the same logic from `chunking.py`.
@@ -67,9 +71,16 @@ so no secret ever needs to live in a file that gets committed.
 
 ## Extending the index
 
-Add new file/directory paths to `INDEXED_PATHS` in `chunking.py`, then
-re-run `build_index.py`. Only `.md` files are indexed today; if you want
-`app/` module docstrings in scope later, extend `build_corpus()` there.
+- **New .md or .pdf files:** just drop them under `docs/` (or under
+  `INDEXED_PATHS` in `chunking.py` more generally) and re-run
+  `build_index.py` — both formats are picked up automatically, no code
+  changes needed.
+- **New source paths** (e.g. `app/` module docstrings later): add the path
+  to `INDEXED_PATHS` in `chunking.py`.
+- **PDF extraction is text-only, not OCR.** A scanned/image PDF with no
+  text layer will yield zero chunks. Extraction quality also depends on the
+  PDF itself — see the "Known limitation" note in ADR-007 about
+  browser-print-to-PDF sources carrying over page navigation text.
 
 ## Cost / limits to be aware of
 

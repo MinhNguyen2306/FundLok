@@ -92,12 +92,18 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="search_fl_docs",
             description=(
-                "Semantically search FundLok's local knowledge base -- CLAUDE.md, "
-                "AGENTS.md, README.md, and everything under docs/ (specs, ADRs, "
-                "handoffs, PR writeups) -- for the sections most relevant to a "
-                "query, by meaning rather than exact keyword match. Use this "
-                "before re-reading whole files to find the right spec, ADR, or "
-                "convention without spending context on unrelated docs."
+                "Searches the FundLok project knowledge base -- CLAUDE.md, AGENTS.md, "
+                "README.md, and everything under docs/ (architecture decisions, ADRs, "
+                "spec docs, handoffs, PR writeups, and external source documents like "
+                "regulations under docs/regulatory/) -- indexed as embeddings in "
+                "Pinecone, ranked by meaning rather than exact keyword match. Use this "
+                "before answering any question about existing design decisions, prior "
+                "spec iterations, regulatory requirements, or codebase conventions, "
+                "since this information may not be in the current conversation context. "
+                "Prefer this over re-reading whole files when only one section is needed. "
+                "Note: for exhaustive review of a single long document (e.g. a full "
+                "gap analysis against a regulation), read that file directly instead -- "
+                "this tool returns only the top-k most relevant chunks, not full coverage."
             ),
             inputSchema={
                 "type": "object",

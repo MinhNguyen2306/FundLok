@@ -225,3 +225,7 @@ pgdata/
 
 .slime/
 *.log
+
+# Claude Code local machine settings
+.claude/settings.local.json
+**/.claude/settings.local.json

@@ -193,6 +193,7 @@ Order:            PENDING_PAYMENT → FILLED | CANCELLED | EXPIRED
 | ADR-004 | Vietnam regulatory compliance (Decree 94 + Circular 64) | Draft |
 | ADR-005 | Permanent local dev environment + local knowledge MCP server | Accepted |
 | ADR-006 | fl-knowledge: BM25 → Pinecone + local embeddings | Accepted |
+| ADR-007 | fl-knowledge: PDF ingestion (regulatory source documents) | Accepted |
 
 Full ADRs in `docs/adr/`.
 
@@ -208,7 +209,7 @@ Edward is CTO and backend/architecture owner. **Edward does not write UI code.**
 
 **Standing local stack (ADR-005):** run the repo's `docker-compose.yml` services — `postgres`, `mailpit`, `minio` — as a long-lived environment (`docker compose up -d`); app code runs on the host via `.venv` + `uvicorn` for hot reload. The dev database is standardized on the compose Postgres: `postgresql+psycopg2://fundlok:fundlok@localhost:5433/fundlok_dev`. Run `docker compose up -d postgres` before `alembic upgrade head` or starting the app.
 
-**fl-knowledge MCP server (ADR-005 → ADR-006):** a project-scoped MCP server at `tools/mcp-servers/fl-knowledge/`, registered via `.mcp.json`, that indexes `CLAUDE.md`, `AGENTS.md`, `README.md`, and everything under `docs/`, exposing `search_fl_docs` and `reindex_fl_docs`. It began on BM25 lexical search (ADR-005) and moved to local `sentence-transformers` embeddings + Pinecone (ADR-006). **Prefer `search_fl_docs` over re-reading whole specs/ADRs** — it's the token-efficient way to pull context. Requires a one-time `build_index.py` run and a `PINECONE_API_KEY` in a gitignored local `.env`; the server points you at `build_index.py` if the index is missing. `docs/` stays the source of truth — the server only reads it.
+**fl-knowledge MCP server (ADR-005 → ADR-006 → ADR-007):** a project-scoped MCP server at `tools/mcp-servers/fl-knowledge/`, registered via `.mcp.json`, that indexes `CLAUDE.md`, `AGENTS.md`, `README.md`, and everything under `docs/` — both `.md` and `.pdf` — exposing `search_fl_docs` and `reindex_fl_docs`. It began on BM25 lexical search (ADR-005), moved to local `sentence-transformers` embeddings + Pinecone (ADR-006), then added PDF ingestion via `pypdf` for external source documents like regulations (ADR-007). **Prefer `search_fl_docs` over re-reading whole specs/ADRs** — it's the token-efficient way to pull context. Requires a one-time `build_index.py` run and a `PINECONE_API_KEY` in a gitignored local `.env`; the server points you at `build_index.py` if the index is missing. External source documents (regulations, standards) go under `docs/regulatory/` — e.g. `docs/regulatory/circular-64-open-api.pdf`. `docs/` stays the source of truth — the server only reads it.
 
 ---
 
