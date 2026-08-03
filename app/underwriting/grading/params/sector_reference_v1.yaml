@@ -1,0 +1,185 @@
+# FundLok — Sector Reference Table
+#
+# STATUS: DRAFT — every value is UNREVIEWED. Loc Vuong (CEO) owns the content and
+# must review before this is used to price a real loan. See `review` block below.
+#
+# WHAT THIS IS
+# The seven per-industry values the grading engine cannot compute from an SME's own
+# financials. Six are finished 0-100 factor scores (higher = lower risk). The
+# seventh, `cagr_pct`, is a RAW percentage that the engine feeds through factor 13's
+# sigmoid — it is not a score and must not be validated as one.
+#
+# 15 industries x 7 columns = 105 values.
+#
+# WHY A TABLE AND NOT AN LLM CALL AT SCORING TIME
+# Sector risk is systematic: every F&B borrower faces the same regulatory and
+# cyclical exposure, so an industry-level number is the correct model, not a
+# compromise. And it is explainable — "Construction Materials scores 25 on
+# cyclicality, table v1" is defensible to a borrower or to the SBV. An inline LLM
+# call is not reproducible and would break replay. AI is used to AUTHOR this file
+# offline (see sector_reference_prompt.md), reviewed by a human, then versioned.
+#
+# CRITICAL — DO NOT WIRE THIS INTO grade()
+# The golden-set fixture supplies its own per-row sector values. If this table is
+# read inside the scoring path, all 10,000 regression rows stop reconciling. It is
+# an ALTERNATIVE input source for production callers assembling a GradingInput.
+# See docs/specs/underwriting/sector-reference-table.md section 6 R2.
+
+sector_reference_version: "v1-20260728"
+status: DRAFT_UNREVIEWED
+authored_by: "Edward Wong (CTO), drafted from CEO rubric logic"
+authoring_prompt: "sector_reference_prompt.md"
+
+review:
+  reviewed_by: null
+  reviewed_at: null
+  # Until reviewed_by is non-null, callers should surface results as provisional.
+
+# ---------------------------------------------------------------------------
+# Calibration constraints this draft was built to. Preserve these on any refresh
+# or the whole book reprices — Sector drives 36% of the interest spread.
+# ---------------------------------------------------------------------------
+calibration:
+  target_mean_premium: 54.75      # today's observed median Sector premium
+  achieved_mean_premium: 53.56    # +2bp across the book vs today. Effectively neutral.
+  target_spread: "wide, roughly 25-85 per factor"
+  achieved_premium_range: [38.89, 71.97]
+  differentiation: "66bp of interest-rate spread between best and worst industry"
+  # Re-run scripts/check_sector_reference.py after any edit to confirm these hold.
+
+# ---------------------------------------------------------------------------
+# Per-column provenance. Refresh cadence differs by column — the natural update
+# unit is a COLUMN (one factor across all 15 industries), because that is how the
+# source data arrives. Event-driven regulatory changes may hit a single cell.
+# ---------------------------------------------------------------------------
+columns:
+  regulatory:
+    label: "Regulatory Exposure"
+    factor_id: 14
+    kind: score            # 0-100, higher = less exposed
+    valid_range: [0, 100]
+    source: "manual — Vietnamese sector licensing regimes"
+    as_of: "2026-07"
+    cadence: event-driven  # refresh when a relevant decree/circular lands
+    reviewed_by: null
+
+  input_cost_vol:
+    label: "Input Cost Volatility"
+    factor_id: 15
+    kind: score
+    valid_range: [0, 100]
+    source: "manual — dominant input cost per sector"
+    as_of: "2026-07"
+    cadence: semi-annual
+    reviewed_by: null
+
+  cyclicality:
+    label: "Cyclicality"
+    factor_id: 16
+    kind: score            # higher = more essential / defensive demand
+    valid_range: [0, 100]
+    source: "manual — essential vs discretionary demand"
+    as_of: "2026-07"
+    cadence: annual        # structural; rarely moves
+    reviewed_by: null
+
+  competitor:
+    label: "Competitor Proxy"
+    factor_id: 17
+    kind: score            # higher = more defensible
+    valid_range: [0, 100]
+    source: "manual — barriers to entry, capital intensity"
+    as_of: "2026-07"
+    cadence: annual
+    reviewed_by: null
+
+  macro:
+    label: "Macroeconomics Exposure"
+    factor_id: 18
+    kind: score            # higher = more insulated
+    valid_range: [0, 100]
+    source: "SBV rate/FX outlook — TO BE CONFIRMED with Loc"
+    as_of: "2026-Q2"
+    cadence: quarterly     # fastest-moving column
+    reviewed_by: null
+
+  uncontrollable:
+    label: "Uncontrollable Risks"
+    factor_id: 19
+    kind: score            # higher = fewer exogenous risks
+    valid_range: [0, 100]
+    source: "manual — weather, disease, disaster exposure"
+    as_of: "2026-07"
+    cadence: annual
+    reviewed_by: null
+
+  cagr_pct:
+    label: "Sector CAGR"
+    factor_id: 13
+    kind: raw_percent      # NOT a score. Fed to factor 13's sigmoid. May be negative.
+    valid_range: [-20.0, 40.0]
+    source: "GSO (General Statistics Office) — TO BE CONFIRMED with Loc"
+    as_of: "2025"
+    cadence: annual
+    reviewed_by: null
+    note: >
+      Requirements section 2.4 always specified this as a config table; it was never
+      supplied, so the engine currently takes it as a per-application input. This
+      column is what closes that gap.
+
+# ---------------------------------------------------------------------------
+# The table. Ordered by resulting Sector premium, highest (lowest risk) first.
+# The `premium` comment is derived, not input — recomputed by the check script.
+# ---------------------------------------------------------------------------
+industries:
+
+  IT Services:              {regulatory: 80, input_cost_vol: 80, cyclicality: 55, competitor: 60, macro: 55, uncontrollable: 80, cagr_pct: 14.0}   # premium 71.97
+  Healthcare & Pharmacy:    {regulatory: 30, input_cost_vol: 65, cyclicality: 88, competitor: 70, macro: 78, uncontrollable: 72, cagr_pct:  9.5}   # premium 69.83
+  Professional Services:    {regulatory: 70, input_cost_vol: 82, cyclicality: 52, competitor: 50, macro: 55, uncontrollable: 82, cagr_pct:  9.0}   # premium 67.93
+  Education & Training:     {regulatory: 45, input_cost_vol: 75, cyclicality: 70, competitor: 45, macro: 62, uncontrollable: 70, cagr_pct:  8.5}   # premium 64.30
+  Beauty & Personal Care:   {regulatory: 58, input_cost_vol: 65, cyclicality: 48, competitor: 30, macro: 48, uncontrollable: 65, cagr_pct:  8.0}   # premium 56.52
+  Retail Trade:             {regulatory: 65, input_cost_vol: 62, cyclicality: 42, competitor: 32, macro: 40, uncontrollable: 60, cagr_pct:  7.0}   # premium 54.20
+  Food & Beverage:          {regulatory: 50, input_cost_vol: 40, cyclicality: 68, competitor: 28, macro: 55, uncontrollable: 55, cagr_pct:  7.5}   # premium 53.72
+  Manufacturing:            {regulatory: 55, input_cost_vol: 38, cyclicality: 38, competitor: 58, macro: 35, uncontrollable: 55, cagr_pct:  6.5}   # premium 50.80
+  Electronics Retail:       {regulatory: 65, input_cost_vol: 55, cyclicality: 32, competitor: 28, macro: 35, uncontrollable: 58, cagr_pct:  6.0}   # premium 49.68
+  Logistics & Transport:    {regulatory: 55, input_cost_vol: 30, cyclicality: 45, competitor: 40, macro: 38, uncontrollable: 45, cagr_pct: 10.5}   # premium 48.73
+  Tourism & Hospitality:    {regulatory: 55, input_cost_vol: 60, cyclicality: 25, competitor: 35, macro: 30, uncontrollable: 35, cagr_pct: 10.0}   # premium 46.71
+  Furniture & Woodwork:     {regulatory: 45, input_cost_vol: 38, cyclicality: 35, competitor: 40, macro: 38, uncontrollable: 50, cagr_pct:  4.0}   # premium 44.62
+  Textile & Garment:        {regulatory: 60, input_cost_vol: 35, cyclicality: 40, competitor: 25, macro: 28, uncontrollable: 55, cagr_pct:  3.0}   # premium 43.52
+  Agriculture & Farming:    {regulatory: 45, input_cost_vol: 25, cyclicality: 65, competitor: 35, macro: 40, uncontrollable: 20, cagr_pct:  3.5}   # premium 42.00
+  Construction Materials:   {regulatory: 55, input_cost_vol: 28, cyclicality: 25, competitor: 30, macro: 25, uncontrollable: 50, cagr_pct:  2.5}   # premium 38.89
+
+# ---------------------------------------------------------------------------
+# Non-sector constants that are also supplied rather than computed.
+# ---------------------------------------------------------------------------
+constants:
+  founder: 50
+  # Factor 22, Founder Experience/Credibility. CEO-approved as a hard-coded
+  # constant (Slack, 28 Jul 2026), revisited at official launch. 50 is the
+  # observed median in the golden set, so this is pricing-neutral. Scoring it
+  # properly would mean profiling founders' public statements — real exposure
+  # under Decree 13/2023 for a factor worth at most 4bp on the rate.
+
+# ---------------------------------------------------------------------------
+# Reasoning notes for the reviewer. Deliberately terse — the full rubric lives in
+# sector_reference_prompt.md. These record the judgment behind non-obvious cells.
+# ---------------------------------------------------------------------------
+notes:
+  - "Food & Beverage competitor 28 — per CEO: 'anybody can copy anyone'. Lowest
+     barrier to entry of the 15."
+  - "Manufacturing competitor 58 — per CEO: capital intensity is a real moat.
+     Note the CEO's worked example expected F&B to be knocked out and manufacturing
+     to pass; on the full seven factors manufacturing scores WORSE overall (50.80 vs
+     53.72) because it loses on input costs, cyclicality and macro. The competitor
+     intuition is right; the conclusion inverts."
+  - "Logistics input_cost_vol 30 — per CEO's own example: fuel is the dominant
+     input and it swings hard."
+  - "Healthcare regulatory 30 is the worst in the table (heavy licensing), but it
+     still ranks 2nd overall because cyclicality 88 and macro 78 are the best.
+     Licensing is simultaneously a burden and a moat — hence competitor 70."
+  - "Agriculture uncontrollable 20 is the worst cell in the table — typhoon, flood,
+     disease. Vietnam-specific and not diversifiable by the borrower."
+  - "Construction Materials ranks last: property-cycle dependent, commodity inputs,
+     no moat, rate-sensitive. Reflects current Vietnamese property sector stress."
+  - "Furniture & Woodwork regulatory 45 reflects timber-legality compliance burden
+     (EUDR / Lacey Act) on exporters, not domestic licensing."
