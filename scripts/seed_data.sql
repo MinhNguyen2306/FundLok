@@ -10,38 +10,83 @@
 -- 0. Cleanup in reverse-dependency order ------------------------------
 DO $$
 BEGIN
-    TRUNCATE TABLE audit_logs            CASCADE;
-    TRUNCATE TABLE ledger_entries        CASCADE;
-    TRUNCATE TABLE ledger_transactions   CASCADE;
-    TRUNCATE TABLE ledger_accounts       CASCADE;
-    TRUNCATE TABLE custodial_accounts    CASCADE;
-    TRUNCATE TABLE holdings              CASCADE;
-    TRUNCATE TABLE orders                CASCADE;
-    TRUNCATE TABLE listings              CASCADE;
-    TRUNCATE TABLE contracts             CASCADE;
-    TRUNCATE TABLE score_runs            CASCADE;
-    TRUNCATE TABLE application_documents CASCADE;
-    TRUNCATE TABLE loan_applications     CASCADE;
-    TRUNCATE TABLE documents             CASCADE;
-    TRUNCATE TABLE project_ownerships    CASCADE;
-    TRUNCATE TABLE projects              CASCADE;
-    TRUNCATE TABLE users                 CASCADE;
+    TRUNCATE TABLE audit_logs                    CASCADE;
+    TRUNCATE TABLE ledger_entries                CASCADE;
+    TRUNCATE TABLE ledger_transactions           CASCADE;
+    TRUNCATE TABLE ledger_accounts               CASCADE;
+    TRUNCATE TABLE custodial_accounts            CASCADE;
+    TRUNCATE TABLE holdings                      CASCADE;
+    TRUNCATE TABLE orders                        CASCADE;
+    TRUNCATE TABLE listings                      CASCADE;
+    TRUNCATE TABLE contracts                     CASCADE;
+    TRUNCATE TABLE score_runs                    CASCADE;
+    TRUNCATE TABLE loan_application_documents    CASCADE;
+    TRUNCATE TABLE application_documents         CASCADE;
+    TRUNCATE TABLE loan_applications             CASCADE;
+    TRUNCATE TABLE documents                     CASCADE;
+    TRUNCATE TABLE project_ownerships            CASCADE;
+    TRUNCATE TABLE projects                      CASCADE;
+    TRUNCATE TABLE gverify_kyb_verifications     CASCADE;
+    TRUNCATE TABLE gverify_verifications         CASCADE;
+    TRUNCATE TABLE verification_webhook_events   CASCADE;
+    TRUNCATE TABLE verifications                 CASCADE;
+    TRUNCATE TABLE linked_accounts               CASCADE;
+    TRUNCATE TABLE refresh_tokens                CASCADE;
+    TRUNCATE TABLE system_settings               CASCADE;
+    TRUNCATE TABLE users                         CASCADE;
 END $$;
 
 -- =====================================================================
--- 1. Users (10: 1 ADMIN, 4 SME, 5 INVESTOR) — password = Password123!
+-- 1. Users (11: 1 SYSTEM_ADMIN, 1 ADMIN, 4 SME, 5 INVESTOR) — password = Password123!
 -- =====================================================================
-INSERT INTO users (id, email, phone, password_hash, role, status, created_at, updated_at) VALUES
-('00000000-0000-0000-0000-000000000001', 'admin@fundlok.vn',      '+84900000001', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'ADMIN',    'ACTIVE',      '2026-01-05 08:00:00+07', NOW()),
-('00000000-0000-0000-0000-000000000002', 'sme.linh@example.vn',   '+84900000002', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'SME',      'ACTIVE',      '2026-02-01 09:30:00+07', NOW()),
-('00000000-0000-0000-0000-000000000003', 'sme.tuan@example.vn',   '+84900000003', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'SME',      'ACTIVE',      '2026-02-03 10:00:00+07', NOW()),
-('00000000-0000-0000-0000-000000000004', 'sme.mai@example.vn',    '+84900000004', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'SME',      'PENDING_KYC', '2026-02-05 11:15:00+07', NOW()),
-('00000000-0000-0000-0000-000000000005', 'sme.hung@example.vn',   '+84900000005', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'SME',      'ACTIVE',      '2026-02-06 14:20:00+07', NOW()),
-('00000000-0000-0000-0000-000000000006', 'investor.an@example.com',  '+6588000001', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'INVESTOR', 'ACTIVE',      '2026-02-08 08:45:00+07', NOW()),
-('00000000-0000-0000-0000-000000000007', 'investor.bao@example.com', '+6588000002', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'INVESTOR', 'ACTIVE',      '2026-02-09 12:30:00+07', NOW()),
-('00000000-0000-0000-0000-000000000008', 'investor.chi@example.com', NULL,          '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'INVESTOR', 'PENDING_KYC', '2026-02-11 16:00:00+07', NOW()),
-('00000000-0000-0000-0000-000000000009', 'investor.dung@example.com','+6588000004', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'INVESTOR', 'ACTIVE',      '2026-02-12 09:10:00+07', NOW()),
-('00000000-0000-0000-0000-000000000010', 'investor.em@example.com',  '+6588000005', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'INVESTOR', 'SUSPENDED',   '2026-02-13 10:40:00+07', NOW())
+INSERT INTO users (id, email, phone, password_hash, full_name, avatar_key, bio, role, email_verified, status, created_at, updated_at) VALUES
+('00000000-0000-0000-0000-000000000000', 'sysadmin@fundlok.vn',   '+84900000000', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'System Admin',     NULL, 'Platform Super Admin',  'SYSTEM_ADMIN', TRUE,  'ACTIVE',      '2026-01-01 08:00:00+07', NOW()),
+('00000000-0000-0000-0000-000000000001', 'admin@fundlok.vn',      '+84900000001', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Quản Trị Viên',   NULL, 'Platform Ops Manager',  'ADMIN',        TRUE,  'ACTIVE',      '2026-01-05 08:00:00+07', NOW()),
+('00000000-0000-0000-0000-000000000002', 'sme.linh@example.vn',   '+84900000002', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Nguyễn Thùy Linh', NULL, 'CEO of ABC Retail',     'SME',          TRUE,  'ACTIVE',      '2026-02-01 09:30:00+07', NOW()),
+('00000000-0000-0000-0000-000000000003', 'sme.tuan@example.vn',   '+84900000003', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Trần Anh Tuấn',   NULL, 'Founder XYZ Coffee',    'SME',          TRUE,  'ACTIVE',      '2026-02-03 10:00:00+07', NOW()),
+('00000000-0000-0000-0000-000000000004', 'sme.mai@example.vn',    '+84900000004', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Phạm Tuyết Mai',  NULL, 'Director TechNova',     'SME',          FALSE, 'PENDING_KYC', '2026-02-05 11:15:00+07', NOW()),
+('00000000-0000-0000-0000-000000000005', 'sme.hung@example.vn',   '+84900000005', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Lê Văn Hùng',     NULL, 'Da Nang Hospitality',   'SME',          TRUE,  'ACTIVE',      '2026-02-06 14:20:00+07', NOW()),
+('00000000-0000-0000-0000-000000000006', 'investor.an@example.com',  '+6588000001', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'An Nguyen',       NULL, 'Angel Investor',        'INVESTOR',     TRUE,  'ACTIVE',      '2026-02-08 08:45:00+07', NOW()),
+('00000000-0000-0000-0000-000000000007', 'investor.bao@example.com', '+6588000002', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Bao Tran',        NULL, 'Private Wealth Inv.',   'INVESTOR',     TRUE,  'ACTIVE',      '2026-02-09 12:30:00+07', NOW()),
+('00000000-0000-0000-0000-000000000008', 'investor.chi@example.com', NULL,          '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Chi Le',          NULL, NULL,                    'INVESTOR',     FALSE, 'PENDING_KYC', '2026-02-11 16:00:00+07', NOW()),
+('00000000-0000-0000-0000-000000000009', 'investor.dung@example.com','+6588000004', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Dung Pham',       NULL, 'Institutional Lender',  'INVESTOR',     TRUE,  'ACTIVE',      '2026-02-12 09:10:00+07', NOW()),
+('00000000-0000-0000-0000-000000000010', 'investor.em@example.com',  '+6588000005', '$argon2id$v=19$m=65536,t=3,p=4$wBjjnLNWam3NmVOqNYZwzg$qNq3INvohJq2fnlVU5rFlqcsHRsHw502u+V3yhsudKY', 'Em Vu',           NULL, NULL,                    'INVESTOR',     TRUE,  'SUSPENDED',   '2026-02-13 10:40:00+07', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- =====================================================================
+-- 1.5. System Settings
+-- =====================================================================
+INSERT INTO system_settings (key, value, description, updated_at, updated_by) VALUES
+('maintenance_mode', '{"enabled": false, "reason": null}', 'Global maintenance mode toggle', NOW(), '00000000-0000-0000-0000-000000000000')
+ON CONFLICT (key) DO NOTHING;
+
+-- =====================================================================
+-- 1.6. Linked Accounts (Mock Bank / E-Wallet linking)
+-- =====================================================================
+INSERT INTO linked_accounts (id, user_id, account_type, provider, account_ref_masked, display_name, status, created_at, updated_at) VALUES
+('f0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'BANK',    'MOCK', '**** 8888 (Vietcombank)', 'VCB Checking Account', 'ACTIVE', '2026-02-02 10:00:00+07', NOW()),
+('f0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000003', 'BANK',    'MOCK', '**** 1234 (Techcombank)', 'TCB Business Account', 'ACTIVE', '2026-02-04 11:00:00+07', NOW()),
+('f0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000006', 'BANK',    'MOCK', '**** 5678 (DBS Bank)',    'DBS Primary Account',  'ACTIVE', '2026-02-08 09:30:00+07', NOW()),
+('f0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000007', 'EWALLET', 'MOCK', '**** 9999 (MoMo)',        'MoMo Wallet',          'ACTIVE', '2026-02-09 13:00:00+07', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- =====================================================================
+-- 1.7. Verifications (Didit Sessions)
+-- =====================================================================
+INSERT INTO verifications (id, user_id, verification_type, session_id, session_number, vendor_data, workflow_id, verification_url, status, decision, created_at, updated_at) VALUES
+('f1000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 'KYC', 'sess_didit_001', 1, '00000000-0000-0000-0000-000000000006', 'wf_kyc_default', 'https://verify.didit.me/s/sess_didit_001', 'Approved', '{"status": "Approved", "confidence": 0.99}', '2026-02-08 09:00:00+07', NOW()),
+('f1000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', 'KYB', 'sess_didit_002', 1, '00000000-0000-0000-0000-000000000002', 'wf_kyb_default', 'https://verify.didit.me/s/sess_didit_002', 'Approved', '{"status": "Approved"}',                    '2026-02-02 10:00:00+07', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+-- =====================================================================
+-- 1.8. GVerify Verifications (eKYC & eKYB)
+-- =====================================================================
+INSERT INTO gverify_verifications (id, user_id, verification_type, status, ocr_transaction_code, face_transaction_code, person_number, full_name, date_of_birth, ocr_data, face_data, rejection_reason, created_at, updated_at) VALUES
+('f2000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 'KYC', 'APPROVED', 'OCR-TX-001', 'FACE-TX-001', '001095001234', 'AN NGUYEN', '1995-05-12', '{"extracted_name": "AN NGUYEN"}', '{"match_score": 98.5}', NULL, '2026-02-08 09:00:00+07', NOW())
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO gverify_kyb_verifications (id, user_id, status, document_type, ocr_transaction_code, tax_transaction_code, tax_code, license_code, business_name, business_type, company_address, date_of_establishment, charter_capital, representatives, ocr_data, tax_data, rejection_reason, created_at, updated_at) VALUES
+('f3000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'APPROVED', 'COMPANY', 'KYB-OCR-001', 'KYB-TAX-001', '0100000001', 'GPKD-00123', 'Công ty TNHH ABC Retail', 'TNHH', '123 Lê Lợi, HCM', '2023-05-10', '5000000000', '[{"name": "NGUYỄN THÙY LINH", "role": "GIÁM ĐỐC"}]', '{"extracted": true}', '{"tax_valid": true}', NULL, '2026-02-02 10:00:00+07', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- =====================================================================
@@ -117,6 +162,12 @@ INSERT INTO application_documents (application_id, document_id) VALUES
 ('40000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000009')
 ON CONFLICT DO NOTHING;
 
+-- 5c. Loan Application Documents (R2 Cloudflare object metadata)
+INSERT INTO loan_application_documents (id, loan_application_id, document_type, file_key, original_filename, content_type, file_size_bytes, status, uploaded_at, created_at, updated_at) VALUES
+('f4000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'FINANCIAL_STATEMENT', 'apps/40000000-0000-0000-0000-000000000001/financials_2025.pdf', 'financials_2025.pdf', 'application/pdf', 1540000, 'UPLOADED', '2026-02-02 15:30:00+07', '2026-02-02 15:00:00+07', NOW()),
+('f4000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'BANK_STATEMENT',      'apps/40000000-0000-0000-0000-000000000002/bank_statement_q4.pdf', 'bank_statement_q4.pdf', 'application/pdf', 2100000, 'UPLOADED', '2026-02-02 16:30:00+07', '2026-02-02 16:00:00+07', NOW())
+ON CONFLICT (id) DO NOTHING;
+
 -- =====================================================================
 -- 6. Score runs (10: one per application)
 -- =====================================================================
@@ -168,17 +219,17 @@ ON CONFLICT (id) DO NOTHING;
 -- =====================================================================
 -- 9. MARKET — Orders (10: investor commitments against listings)
 -- =====================================================================
-INSERT INTO orders (id, listing_id, investor_id, amount, status, payment_confirmed_at, created_at, updated_at) VALUES
-('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 200000000.00, 'FILLED',          '2026-02-09 10:00:00+07', '2026-02-08 10:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000007', 300000000.00, 'FILLED',          '2026-02-09 11:00:00+07', '2026-02-08 11:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000008', 120000000.00, 'FILLED',          '2026-02-09 12:00:00+07', '2026-02-08 12:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000004', '70000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000006', 500000000.00, 'FILLED',          '2026-02-11 10:00:00+07', '2026-02-10 10:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000005', '70000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000009', 500000000.00, 'FILLED',          '2026-02-11 11:00:00+07', '2026-02-10 11:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000006', '70000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000010', 300000000.00, 'FILLED',          '2026-02-13 10:00:00+07', '2026-02-12 10:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000007', '70000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000007',  50000000.00, 'PENDING_PAYMENT', NULL,                     '2026-02-12 14:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000008', '70000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000008',  30000000.00, 'PENDING_PAYMENT', NULL,                     '2026-02-12 15:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000009', '70000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000009', 350000000.00, 'FILLED',          '2026-01-12 10:00:00+07', '2026-01-11 10:00:00+07', NOW()),
-('80000000-0000-0000-0000-000000000010', '70000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000010',  80000000.00, 'CANCELLED',       NULL,                     '2026-02-08 13:00:00+07', NOW())
+INSERT INTO orders (id, listing_id, investor_id, amount, status, payment_confirmed_at, idempotency_key, created_at, updated_at) VALUES
+('80000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 200000000.00, 'FILLED',          '2026-02-09 10:00:00+07', 'idempotency-ord-001', '2026-02-08 10:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000007', 300000000.00, 'FILLED',          '2026-02-09 11:00:00+07', 'idempotency-ord-002', '2026-02-08 11:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000003', '70000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000008', 120000000.00, 'FILLED',          '2026-02-09 12:00:00+07', 'idempotency-ord-003', '2026-02-08 12:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000004', '70000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000006', 500000000.00, 'FILLED',          '2026-02-11 10:00:00+07', 'idempotency-ord-004', '2026-02-10 10:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000005', '70000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000009', 500000000.00, 'FILLED',          '2026-02-11 11:00:00+07', 'idempotency-ord-005', '2026-02-10 11:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000006', '70000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000010', 300000000.00, 'FILLED',          '2026-02-13 10:00:00+07', 'idempotency-ord-006', '2026-02-12 10:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000007', '70000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000007',  50000000.00, 'PENDING_PAYMENT', NULL,                     'idempotency-ord-007', '2026-02-12 14:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000008', '70000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000008',  30000000.00, 'PENDING_PAYMENT', NULL,                     'idempotency-ord-008', '2026-02-12 15:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000009', '70000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000009', 350000000.00, 'FILLED',          '2026-01-12 10:00:00+07', 'idempotency-ord-009', '2026-01-11 10:00:00+07', NOW()),
+('80000000-0000-0000-0000-000000000010', '70000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000010',  80000000.00, 'CANCELLED',       NULL,                     'idempotency-ord-010', '2026-02-08 13:00:00+07', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- =====================================================================
@@ -282,7 +333,6 @@ INSERT INTO ledger_entries (id, contract_id, ledger_transaction_id, debit_accoun
 ('a0000000-0000-0000-0000-000000000010', '60000000-0000-0000-0000-000000000010', 'e0000000-0000-0000-0000-000000000012', 'd0000000-0000-0000-0000-000000000005', 'd0000000-0000-0000-0000-000000000001', 'PENALTY', 2000000.00, 'PEN-0001', '2026-02-20 09:30:00+07', NOW(), '00000000-0000-0000-0000-000000000001'),
 ('a0000000-0000-0000-0000-000000000020', '60000000-0000-0000-0000-000000000010', 'e0000000-0000-0000-0000-000000000012', 'd0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000002', 'PENALTY', 2000000.00, 'pen:fee', '2026-02-20 09:30:00+07', NOW(), '00000000-0000-0000-0000-000000000001')
 ON CONFLICT (id) DO NOTHING;
-
 
 -- =====================================================================
 -- 12. Audit logs (5: sample admin / system actions)
