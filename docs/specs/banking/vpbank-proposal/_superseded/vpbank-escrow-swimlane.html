@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="#2a78d6,#eb6834,#1baf7a,#4a3aa7,#e87ba4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FundLok &times; VPBank &mdash; Escrow Lifecycle Swimlane</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --band: #fcfcfb;
+    --band-alt: #f6f6f3;
+    --cellbg: #ffffff;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #4a3aa7; --s5: #e87ba4;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --money-in: #1baf7a; --money-out: #2a78d6;
+    --badge-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --plane: #0d0d0d; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --band: #1a1a19; --band-alt: #201f1e; --cellbg: #242422;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9; --s5: #d55181;
+      --money-in: #199e70; --money-out: #3987e5;
+      --badge-ink: #1a1a19;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --plane: #0d0d0d; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --band: #1a1a19; --band-alt: #201f1e; --cellbg: #242422;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9085e9; --s5: #d55181;
+    --money-in: #199e70; --money-out: #3987e5;
+    --badge-ink: #1a1a19;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 24px 56px;
+    background: var(--plane); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+  header { max-width: 1180px; margin: 0 auto 22px; }
+  h1 { font-size: 25px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); margin: 0 0 4px; }
+  .meta { color: var(--muted); font-size: 12.5px; }
+  .fbo {
+    margin: 18px 0 0; padding: 14px 16px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--ink-2);
+  }
+  .fbo strong { color: var(--ink); }
+  .fbo code { font-size: 12.5px; background: var(--band-alt); padding: 1px 5px; border-radius: 4px; }
+  .toolbar { max-width: 1180px; margin: 0 auto 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 12.5px; padding: 6px 13px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--ink-2); cursor: pointer;
+  }
+  button:hover { color: var(--ink); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-left: auto; font-size: 12.5px; color: var(--ink-2); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  figure { margin: 0 auto; max-width: 1180px; }
+  .scroller {
+    overflow-x: auto; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 12px; padding: 6px;
+  }
+  svg { display: block; }
+  .band { fill: var(--band); }
+  .band-alt { fill: var(--band-alt); }
+  .money-band { fill: var(--band-alt); }
+  .lane-accent { opacity: 0.9; }
+  .colsep, .lanesep { stroke: var(--grid); stroke-width: 1; }
+  .cell { fill: var(--cellbg); stroke: var(--border); stroke-width: 1; }
+  .cell-edge { opacity: 0.95; }
+  .celltext { font-size: 11px; fill: var(--ink-2); }
+  .lanelabel { font-size: 13px; font-weight: 620; fill: var(--ink); }
+  .lanesub { font-size: 10.5px; fill: var(--muted); }
+  .lanelabel-money { font-size: 12.5px; font-weight: 620; fill: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stephead { font-size: 12px; font-weight: 620; fill: var(--ink); }
+  .stepnum { font-size: 12px; font-weight: 700; fill: var(--surface-1); }
+  .stepnum-bg { fill: var(--ink); }
+  .corner { font-size: 13px; font-weight: 660; fill: var(--ink); }
+  .corner-sub { font-size: 11px; fill: var(--muted); }
+  .s1-fill { fill: var(--s1); } .s2-fill { fill: var(--s2); } .s3-fill { fill: var(--s3); }
+  .s4-fill { fill: var(--s4); } .s5-fill { fill: var(--s5); }
+  .conn { stroke: var(--s4); stroke-width: 1.6; stroke-dasharray: 4 3; }
+  .conn-comp { stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 1 3; }
+  .conn-opt { stroke: var(--muted); stroke-width: 1.3; stroke-dasharray: 2 4; opacity: 0.75; }
+  .badge { stroke-width: 1; }
+  .badge-must { fill: var(--s4); stroke: var(--s4); }
+  .badge-should { fill: none; stroke: var(--s4); }
+  .badge-nice { fill: none; stroke: var(--muted); }
+  .badge-opt { fill: none; stroke: var(--muted); stroke-dasharray: 2 2; }
+  .badgetext { font-size: 10px; font-weight: 700; }
+  .badgetext-must { fill: var(--badge-ink); }
+  .badgetext-should { fill: var(--s4); }
+  .badgetext-nice, .badgetext-opt { fill: var(--muted); }
+  .money { stroke-width: 1.2; }
+  .money-in { fill: none; stroke: var(--money-in); }
+  .money-out { fill: none; stroke: var(--money-out); }
+  .money-neutral { fill: none; stroke: var(--axis); stroke-dasharray: 4 3; }
+  .moneytext { font-size: 11px; font-weight: 620; }
+  .moneytext-in { fill: var(--money-in); }
+  .moneytext-out { fill: var(--money-out); }
+  .moneytext-neutral { fill: var(--muted); font-weight: 500; }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 12px; }
+  section { max-width: 1180px; margin: 40px auto 0; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  .caps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 8px; }
+  .caps li { display: flex; align-items: center; gap: 11px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 9px 13px; }
+  .cap-id { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .cap-must { background: var(--s4); color: var(--badge-ink); }
+  .cap-should { border: 1px solid var(--s4); color: var(--s4); }
+  .cap-nice { border: 1px solid var(--muted); color: var(--muted); }
+  .cap-name { flex: 1; font-size: 13px; }
+  .cap-pri { font-size: 11.5px; color: var(--muted); }
+  details { margin-top: 28px; max-width: 1180px; margin-left: auto; margin-right: auto; }
+  summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+  table { border-collapse: collapse; width: 100%; margin-top: 14px; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 620; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .tnum { font-variant-numeric: tabular-nums; color: var(--muted); }
+  @media print {
+    body { padding: 0; background: #fff; }
+    .toolbar button { display: none; }
+    figure { max-width: none; }
+    .screen-only { display: none; }
+    .scroller { overflow: visible; border: none; }
+    details { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>FundLok &times; VPBank &mdash; escrow lifecycle, onboarding to loan closure</h1>
+  <p class="sub">Nine steps, five lanes, and every point where FundLok's systems must talk to VPBank's.</p>
+  <p class="meta">Draft v0.1 &middot; 4 August 2026 &middot; one escrow account per loan project, held FBO the borrower and its lenders</p>
+  <div class="fbo">
+    <strong>The account structure.</strong> Each funded project gets its own VPBank escrow account titled
+    <code>[FL_LEGAL_ENTITY] FBO [PROJECT_CODE]</code>. FundLok is the <strong>account holder of record</strong> &mdash; it opens,
+    operates and instructs the account, and is the entity VPBank contracts with and performs CDD on. The
+    <strong>beneficiaries</strong> are one SME borrower and that project's N lenders, who hold the economic interest.
+    They are <em>counterparties to each other</em> under the loan contract, not VPBank account holders. FundLok never
+    holds customer funds, and no project's money can ever settle another project's obligation.
+  </div>
+</header>
+
+<div class="toolbar">
+  <button id="themeBtn" type="button">Toggle dark mode</button>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--s1)"></span>SME (Borrower)</span>
+    <span><span class="sw" style="background:var(--s2)"></span>Lender (Investor)</span>
+    <span><span class="sw" style="background:var(--s3)"></span>FundLok</span>
+    <span><span class="sw" style="background:var(--s4)"></span>VPBank</span>
+    <span><span class="sw" style="background:var(--s5)"></span>Third parties</span>
+  </div>
+</div>
+
+<figure>
+  <div class="scroller">
+    <svg viewBox="0 0 2132 826" width="2132" height="826" role="img"
+         aria-label="Swimlane diagram of the nine-step FundLok and VPBank escrow lifecycle across five lanes: SME borrower, lender investor, FundLok platform, VPBank escrow and Open API, and third parties. A full text equivalent follows in the step-by-step table.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--s4)"/>
+        </marker>
+        <marker id="arrowOpt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+<rect class="band" x="0" y="92" width="2122" height="128"/>
+<rect class="lane-accent s1-fill" x="0" y="92" width="5" height="128"/>
+<rect class="band-alt" x="0" y="220" width="2122" height="128"/>
+<rect class="lane-accent s2-fill" x="0" y="220" width="5" height="128"/>
+<rect class="band" x="0" y="348" width="2122" height="128"/>
+<rect class="lane-accent s3-fill" x="0" y="348" width="5" height="128"/>
+<rect class="band-alt" x="0" y="476" width="2122" height="128"/>
+<rect class="lane-accent s4-fill" x="0" y="476" width="5" height="128"/>
+<rect class="band" x="0" y="604" width="2122" height="128"/>
+<rect class="lane-accent s5-fill" x="0" y="604" width="5" height="128"/>
+<rect class="money-band" x="0" y="732" width="2122" height="84"/>
+<line class="colsep" x1="196" y1="62" x2="196" y2="816"/>
+<line class="colsep" x1="410" y1="62" x2="410" y2="816"/>
+<line class="colsep" x1="624" y1="62" x2="624" y2="816"/>
+<line class="colsep" x1="838" y1="62" x2="838" y2="816"/>
+<line class="colsep" x1="1052" y1="62" x2="1052" y2="816"/>
+<line class="colsep" x1="1266" y1="62" x2="1266" y2="816"/>
+<line class="colsep" x1="1480" y1="62" x2="1480" y2="816"/>
+<line class="colsep" x1="1694" y1="62" x2="1694" y2="816"/>
+<line class="colsep" x1="1908" y1="62" x2="1908" y2="816"/>
+<line class="colsep" x1="2122" y1="62" x2="2122" y2="816"/>
+<line class="colsep" x1="0" y1="62" x2="0" y2="816"/>
+<line class="lanesep" x1="0" y1="92" x2="2122" y2="92"/>
+<line class="lanesep" x1="0" y1="220" x2="2122" y2="220"/>
+<line class="lanesep" x1="0" y1="348" x2="2122" y2="348"/>
+<line class="lanesep" x1="0" y1="476" x2="2122" y2="476"/>
+<line class="lanesep" x1="0" y1="604" x2="2122" y2="604"/>
+<line class="lanesep" x1="0" y1="732" x2="2122" y2="732"/>
+<line class="lanesep" x1="0" y1="816" x2="2122" y2="816"/>
+<circle class="stepnum-bg" cx="222" cy="30" r="14"/>
+<text class="stepnum" x="222" y="35" text-anchor="middle">1</text>
+<text class="stephead" x="244" y="26">
+<tspan x="244" dy="0">Onboarding &amp;</tspan>
+<tspan x="244" dy="14">Verification</tspan>
+</text>
+<circle class="stepnum-bg" cx="436" cy="30" r="14"/>
+<text class="stepnum" x="436" y="35" text-anchor="middle">2</text>
+<text class="stephead" x="458" y="26">
+<tspan x="458" dy="0">Settlement Account</tspan>
+<tspan x="458" dy="14">Linking</tspan>
+</text>
+<circle class="stepnum-bg" cx="650" cy="30" r="14"/>
+<text class="stepnum" x="650" y="35" text-anchor="middle">3</text>
+<text class="stephead" x="672" y="26">
+<tspan x="672" dy="0">Listing, Grading &amp;</tspan>
+<tspan x="672" dy="14">Contract</tspan>
+</text>
+<circle class="stepnum-bg" cx="864" cy="30" r="14"/>
+<text class="stepnum" x="864" y="35" text-anchor="middle">4</text>
+<text class="stephead" x="886" y="26">
+<tspan x="886" dy="0">Escrow Account</tspan>
+<tspan x="886" dy="14">Provisioning</tspan>
+</text>
+<circle class="stepnum-bg" cx="1078" cy="30" r="14"/>
+<text class="stepnum" x="1078" y="35" text-anchor="middle">5</text>
+<text class="stephead" x="1100" y="26">
+<tspan x="1100" dy="0">Lender Funding into</tspan>
+<tspan x="1100" dy="14">Escrow</tspan>
+</text>
+<circle class="stepnum-bg" cx="1292" cy="30" r="14"/>
+<text class="stepnum" x="1292" y="35" text-anchor="middle">6</text>
+<text class="stephead" x="1314" y="35">
+<tspan x="1314" dy="0">Disbursement to SME</tspan>
+</text>
+<circle class="stepnum-bg" cx="1506" cy="30" r="14"/>
+<text class="stepnum" x="1506" y="35" text-anchor="middle">7</text>
+<text class="stephead" x="1528" y="35">
+<tspan x="1528" dy="0">Repayment Collection</tspan>
+</text>
+<circle class="stepnum-bg" cx="1720" cy="30" r="14"/>
+<text class="stepnum" x="1720" y="35" text-anchor="middle">8</text>
+<text class="stephead" x="1742" y="26">
+<tspan x="1742" dy="0">Distribution to</tspan>
+<tspan x="1742" dy="14">Lenders</tspan>
+</text>
+<circle class="stepnum-bg" cx="1934" cy="30" r="14"/>
+<text class="stepnum" x="1934" y="35" text-anchor="middle">9</text>
+<text class="stephead" x="1956" y="26">
+<tspan x="1956" dy="0">Closure &amp; Account</tspan>
+<tspan x="1956" dy="14">Close</tspan>
+</text>
+<text class="corner" x="14" y="35">Nine-step lifecycle</text>
+<text class="corner-sub" x="14" y="53">onboarding → loan closure</text>
+<text class="lanelabel" x="20" y="149.0">
+<tspan x="20" dy="0">SME (Borrower)</tspan>
+</text>
+<rect class="lanechip s1-fill" x="20" y="158.0" width="30" height="4" rx="2"/>
+<text class="lanesub" x="20" y="176.0">
+<tspan x="20" dy="0">one borrower per project</tspan>
+</text>
+<rect class="cell s1-cell" x="207" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="207" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="220" y="125">
+<tspan x="220" dy="0">Registers; submits business</tspan>
+<tspan x="220" dy="14">registration and legal-rep ID</tspan>
+<tspan x="220" dy="14">for KYB</tspan>
+</text>
+<rect class="cell s1-cell" x="421" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="421" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="434" y="125">
+<tspan x="434" dy="0">Links own settlement account</tspan>
+<tspan x="434" dy="14">(bank or licensed e-wallet)</tspan>
+</text>
+<rect class="cell s1-cell" x="635" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="635" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="648" y="125">
+<tspan x="648" dy="0">Describes enterprise +</tspan>
+<tspan x="648" dy="14">project; applies for loan;</tspan>
+<tspan x="648" dy="14">signs contract</tspan>
+</text>
+<rect class="cell s1-cell" x="1277" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="1277" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1290" y="125">
+<tspan x="1290" dy="0">Receives disbursement, net of</tspan>
+<tspan x="1290" dy="14">FL fee</tspan>
+</text>
+<rect class="cell s1-cell" x="1491" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="1491" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1504" y="125">
+<tspan x="1504" dy="0">Repays principal + interest on</tspan>
+<tspan x="1504" dy="14">schedule. Early repayment</tspan>
+<tspan x="1504" dy="14">encouraged</tspan>
+</text>
+<rect class="cell s1-cell" x="1919" y="104" width="192" height="104" rx="7"/>
+<rect class="cell-edge s1-fill" x="1919" y="104" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1932" y="125">
+<tspan x="1932" dy="0">Obligation discharged</tspan>
+</text>
+<text class="lanelabel" x="20" y="270.0">
+<tspan x="20" dy="0">Lender (Investor)</tspan>
+</text>
+<rect class="lanechip s2-fill" x="20" y="279.0" width="30" height="4" rx="2"/>
+<text class="lanesub" x="20" y="297.0">
+<tspan x="20" dy="0">one to many — N per</tspan>
+<tspan x="20" dy="13">project</tspan>
+</text>
+<rect class="cell s2-cell" x="207" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="207" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="220" y="253">
+<tspan x="220" dy="0">Registers; completes KYC</tspan>
+</text>
+<rect class="cell s2-cell" x="421" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="421" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="434" y="253">
+<tspan x="434" dy="0">Links own settlement account</tspan>
+<tspan x="434" dy="14">(bank or licensed e-wallet)</tspan>
+</text>
+<rect class="cell s2-cell" x="635" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="635" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="648" y="253">
+<tspan x="648" dy="0">Browses marketplace; reviews</tspan>
+<tspan x="648" dy="14">graded listings</tspan>
+</text>
+<rect class="cell s2-cell" x="1063" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="1063" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1076" y="253">
+<tspan x="1076" dy="0">Places order; pays into</tspan>
+<tspan x="1076" dy="14">project escrow quoting</tspan>
+<tspan x="1076" dy="14">reference (or virtual a/c)</tspan>
+</text>
+<rect class="cell s2-cell" x="1705" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="1705" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1718" y="253">
+<tspan x="1718" dy="0">Receives pro-rata distribution</tspan>
+</text>
+<rect class="cell s2-cell" x="1919" y="232" width="192" height="104" rx="7"/>
+<rect class="cell-edge s2-fill" x="1919" y="232" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1932" y="253">
+<tspan x="1932" dy="0">Receives converted shares</tspan>
+</text>
+<text class="lanelabel" x="20" y="405.0">
+<tspan x="20" dy="0">FundLok (Platform)</tspan>
+</text>
+<rect class="lanechip s3-fill" x="20" y="414.0" width="30" height="4" rx="2"/>
+<text class="lanesub" x="20" y="432.0">
+<tspan x="20" dy="0">account holder of record</tspan>
+</text>
+<rect class="cell s3-cell" x="207" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="207" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="220" y="381">
+<tspan x="220" dy="0">Runs KYB/KYC via Didit;</tspan>
+<tspan x="220" dy="14">compiles beneficiary register</tspan>
+<tspan x="220" dy="14">for VPBank</tspan>
+</text>
+<rect class="cell s3-cell" x="421" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="421" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="434" y="381">
+<tspan x="434" dy="0">Stores masked ref only;</tspan>
+<tspan x="434" dy="14">verifies name match; records</tspan>
+<tspan x="434" dy="14">revocable consent</tspan>
+</text>
+<rect class="cell s3-cell" x="635" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="635" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="648" y="381">
+<tspan x="648" dy="0">Grading engine sets rate tier;</tspan>
+<tspan x="648" dy="14">ScoreRun LOCKED; ADMIN</tspan>
+<tspan x="648" dy="14">approves; Contract SIGNED</tspan>
+</text>
+<rect class="cell s3-cell" x="849" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="849" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="862" y="381">
+<tspan x="862" dy="0">Requests escrow a/c; writes</tspan>
+<tspan x="862" dy="14">custodial_account</tspan>
+<tspan x="862" dy="14">scope=CONTRACT; builds chart</tspan>
+<tspan x="862" dy="14">of accounts; ADMIN gate</tspan>
+</text>
+<rect class="cell s3-cell" x="1063" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="1063" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1076" y="381">
+<tspan x="1076" dy="0">Order PENDING_PAYMENT +</tspan>
+<tspan x="1076" dy="14">reference; matches credit;</tspan>
+<tspan x="1076" dy="14">posts FUNDING; order FILLED;</tspan>
+<tspan x="1076" dy="14">unmatched to SUSPENSE</tspan>
+</text>
+<rect class="cell s3-cell" x="1277" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="1277" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1290" y="381">
+<tspan x="1290" dy="0">Checks balance; instructs</tspan>
+<tspan x="1290" dy="14">payout net of fee; posts</tspan>
+<tspan x="1290" dy="14">DISBURSEMENT + FEE atomically</tspan>
+</text>
+<rect class="cell s3-cell" x="1491" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="1491" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1504" y="381">
+<tspan x="1504" dy="0">Matches credit to instalment;</tspan>
+<tspan x="1504" dy="14">posts REPAYMENT; recalculates</tspan>
+<tspan x="1504" dy="14">schedule on early repayment</tspan>
+</text>
+<rect class="cell s3-cell" x="1705" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="1705" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1718" y="381">
+<tspan x="1718" dy="0">Computes pro-rata; instructs</tspan>
+<tspan x="1718" dy="14">batch payout; posts</tspan>
+<tspan x="1718" dy="14">REPAYMENT_SPLIT (N</tspan>
+<tspan x="1718" dy="14">DISTRIBUTION + FEE)</tspan>
+</text>
+<rect class="cell s3-cell" x="1919" y="360" width="192" height="104" rx="7"/>
+<rect class="cell-edge s3-fill" x="1919" y="360" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1932" y="381">
+<tspan x="1932" dy="0">Issues shares; reconciles</tspan>
+<tspan x="1932" dy="14">escrow to zero; Contract</tspan>
+<tspan x="1932" dy="14">CLOSED; requests a/c closure</tspan>
+</text>
+<text class="lanelabel" x="20" y="526.0">
+<tspan x="20" dy="0">VPBank (Escrow Bank)</tspan>
+</text>
+<rect class="lanechip s4-fill" x="20" y="535.0" width="30" height="4" rx="2"/>
+<text class="lanesub" x="20" y="553.0">
+<tspan x="20" dy="0">escrow bank &amp; Open API</tspan>
+<tspan x="20" dy="13">provider</tspan>
+</text>
+<rect class="cell s4-cell" x="207" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="207" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="220" y="509">
+<tspan x="220" dy="0">CDD on FundLok as account</tspan>
+<tspan x="220" dy="14">holder of record; agrees</tspan>
+<tspan x="220" dy="14">beneficiary register format</tspan>
+</text>
+<rect class="cell s4-cell" x="421" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="421" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="434" y="509">
+<tspan x="434" dy="0">Account name verification</tspan>
+<tspan x="434" dy="14">against verified legal name;</tspan>
+<tspan x="434" dy="14">consent capture</tspan>
+</text>
+<rect class="badge badge-must" x="434" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="447.0" y="576" text-anchor="middle">B2</text>
+<rect class="badge badge-must" x="465" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="478.0" y="576" text-anchor="middle">B9</text>
+<rect class="cell s4-cell" x="635" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="635" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="648" y="509">
+<tspan x="648" dy="0">Optional: CIC credit lookup as</tspan>
+<tspan x="648" dy="14">a member institution</tspan>
+</text>
+<rect class="badge badge-opt" x="648" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-opt" x="661.0" y="576" text-anchor="middle">B?</text>
+<rect class="cell s4-cell" x="849" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="849" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="862" y="509">
+<tspan x="862" dy="0">Opens FBO escrow account for</tspan>
+<tspan x="862" dy="14">the project; returns account</tspan>
+<tspan x="862" dy="14">number + status</tspan>
+</text>
+<rect class="badge badge-should" x="862" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-should" x="875.0" y="576" text-anchor="middle">B1</text>
+<rect class="cell s4-cell" x="1063" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="1063" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1076" y="509">
+<tspan x="1076" dy="0">Notifies FL of inbound credit</tspan>
+<tspan x="1076" dy="14">with amount, value date,</tspan>
+<tspan x="1076" dy="14">remitter, reference</tspan>
+</text>
+<rect class="badge badge-must" x="1076" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1089.0" y="576" text-anchor="middle">B3</text>
+<rect class="badge badge-must" x="1107" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1120.0" y="576" text-anchor="middle">B6</text>
+<rect class="cell s4-cell" x="1277" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="1277" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1290" y="509">
+<tspan x="1290" dy="0">Returns balance; executes</tspan>
+<tspan x="1290" dy="14">credit transfer on FL</tspan>
+<tspan x="1290" dy="14">instruction; reports status</tspan>
+</text>
+<rect class="badge badge-must" x="1290" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1303.0" y="576" text-anchor="middle">B5</text>
+<rect class="badge badge-must" x="1321" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1334.0" y="576" text-anchor="middle">B4</text>
+<rect class="badge badge-should" x="1352" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-should" x="1365.0" y="576" text-anchor="middle">B7</text>
+<rect class="cell s4-cell" x="1491" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="1491" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1504" y="509">
+<tspan x="1504" dy="0">Notifies FL of inbound credit;</tspan>
+<tspan x="1504" dy="14">optional standing instruction</tspan>
+<tspan x="1504" dy="14">/ direct debit</tspan>
+</text>
+<rect class="badge badge-must" x="1504" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1517.0" y="576" text-anchor="middle">B3</text>
+<rect class="badge badge-must" x="1535" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1548.0" y="576" text-anchor="middle">B6</text>
+<rect class="cell s4-cell" x="1705" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="1705" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1718" y="509">
+<tspan x="1718" dy="0">Executes batch credit transfer</tspan>
+<tspan x="1718" dy="14">with per-leg status; failed</tspan>
+<tspan x="1718" dy="14">legs stay in escrow</tspan>
+</text>
+<rect class="badge badge-must" x="1718" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1731.0" y="576" text-anchor="middle">B4</text>
+<rect class="badge badge-should" x="1749" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-should" x="1762.0" y="576" text-anchor="middle">B7</text>
+<rect class="cell s4-cell" x="1919" y="488" width="192" height="104" rx="7"/>
+<rect class="cell-edge s4-fill" x="1919" y="488" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1932" y="509">
+<tspan x="1932" dy="0">Issues final statement; closes</tspan>
+<tspan x="1932" dy="14">the zero-balance escrow</tspan>
+<tspan x="1932" dy="14">account</tspan>
+</text>
+<rect class="badge badge-must" x="1932" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-must" x="1945.0" y="576" text-anchor="middle">B6</text>
+<rect class="badge badge-nice" x="1963" y="564" width="26" height="16" rx="4"/>
+<text class="badgetext badgetext-nice" x="1976.0" y="576" text-anchor="middle">B8</text>
+<text class="lanelabel" x="20" y="654.0">
+<tspan x="20" dy="0">Third Parties</tspan>
+</text>
+<rect class="lanechip s5-fill" x="20" y="663.0" width="30" height="4" rx="2"/>
+<text class="lanesub" x="20" y="681.0">
+<tspan x="20" dy="0">Didit · NAPAS · CIC ·</tspan>
+<tspan x="20" dy="13">SBV</tspan>
+</text>
+<rect class="cell s5-cell" x="207" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="207" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="220" y="637">
+<tspan x="220" dy="0">Didit - identity and business</tspan>
+<tspan x="220" dy="14">verification</tspan>
+</text>
+<rect class="cell s5-cell" x="421" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="421" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="434" y="637">
+<tspan x="434" dy="0">NAPAS - account name inquiry</tspan>
+<tspan x="434" dy="14">rails</tspan>
+</text>
+<rect class="cell s5-cell" x="635" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="635" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="648" y="637">
+<tspan x="648" dy="0">CIC - National Credit</tspan>
+<tspan x="648" dy="14">Information Centre (route TBD)</tspan>
+</text>
+<rect class="cell s5-cell" x="1063" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="1063" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1076" y="637">
+<tspan x="1076" dy="0">NAPAS - interbank credit rails</tspan>
+</text>
+<rect class="cell s5-cell" x="1277" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="1277" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1290" y="637">
+<tspan x="1290" dy="0">NAPAS - interbank credit rails</tspan>
+</text>
+<rect class="cell s5-cell" x="1491" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="1491" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1504" y="637">
+<tspan x="1504" dy="0">NAPAS - interbank credit rails</tspan>
+</text>
+<rect class="cell s5-cell" x="1705" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="1705" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1718" y="637">
+<tspan x="1718" dy="0">NAPAS - interbank credit rails</tspan>
+</text>
+<rect class="cell s5-cell" x="1919" y="616" width="192" height="104" rx="7"/>
+<rect class="cell-edge s5-fill" x="1919" y="616" width="3.5" height="104" rx="1.75"/>
+<text class="celltext" x="1932" y="637">
+<tspan x="1932" dy="0">SBV - periodic reporting and</tspan>
+<tspan x="1932" dy="14">audit inspection</tspan>
+</text>
+<line class="conn-comp" x1="380" y1="464" x2="380" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="594" y1="464" x2="594" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn-opt" x1="808" y1="464" x2="808" y2="488" marker-start="url(#arrowOpt)" marker-end="url(#arrowOpt)"/>
+<line class="conn" x1="1022" y1="464" x2="1022" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="1236" y1="464" x2="1236" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="1450" y1="464" x2="1450" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="1664" y1="464" x2="1664" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="1878" y1="464" x2="1878" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<line class="conn" x1="2092" y1="464" x2="2092" y2="488" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+<text class="lanelabel-money" x="20" y="764">Money movement</text>
+<text class="corner-sub" x="20" y="782">funds only ever move</text>
+<text class="corner-sub" x="20" y="796">through VPBank escrow</text>
+<rect class="money money-neutral" x="849" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-neutral" x="945.0" y="771" text-anchor="middle">
+<tspan x="945.0" dy="0">escrow opened, zero</tspan>
+<tspan x="945.0" dy="14">balance</tspan>
+</text>
+<rect class="money money-in" x="1063" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-in" x="1159.0" y="778" text-anchor="middle">
+<tspan x="1159.0" dy="0">Lenders → Escrow</tspan>
+</text>
+<rect class="money money-out" x="1277" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-out" x="1373.0" y="778" text-anchor="middle">
+<tspan x="1373.0" dy="0">Escrow → SME  +  FL fee</tspan>
+</text>
+<rect class="money money-in" x="1491" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-in" x="1587.0" y="778" text-anchor="middle">
+<tspan x="1587.0" dy="0">SME → Escrow</tspan>
+</text>
+<rect class="money money-out" x="1705" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-out" x="1801.0" y="771" text-anchor="middle">
+<tspan x="1801.0" dy="0">Escrow → Lenders  +  FL</tspan>
+<tspan x="1801.0" dy="14">fee</tspan>
+</text>
+<rect class="money money-neutral" x="1919" y="754" width="192" height="40" rx="7"/>
+<text class="moneytext moneytext-neutral" x="2015.0" y="771" text-anchor="middle">
+<tspan x="2015.0" dy="0">Escrow → zero, account</tspan>
+<tspan x="2015.0" dy="14">closed</tspan>
+</text>
+    </svg>
+  </div>
+  <figcaption>
+    Dashed vertical connectors mark a FundLok&ndash;VPBank exchange. Filled <strong>B</strong> badges are must-have
+    capabilities, outlined are should-have or nice-to-have, dotted is an optional ask. Step 3 needs no banking
+    integration &mdash; the dotted connector is the optional CIC lookup.<span class="screen-only"> Scroll horizontally to see all nine steps.</span>
+  </figcaption>
+</figure>
+
+<section>
+  <h2>The nine capabilities FundLok needs from VPBank</h2>
+  <ul class="caps">
+<li><span class="cap-id cap-should">B1</span><span class="cap-name">Escrow account opening</span><span class="cap-pri">Should have</span></li>
+<li><span class="cap-id cap-must">B2</span><span class="cap-name">Account name verification</span><span class="cap-pri">Must have</span></li>
+<li><span class="cap-id cap-must">B3</span><span class="cap-name">Inbound credit notification</span><span class="cap-pri">Must have</span></li>
+<li><span class="cap-id cap-must">B4</span><span class="cap-name">Payment initiation, single &amp; batch</span><span class="cap-pri">Must have</span></li>
+<li><span class="cap-id cap-must">B5</span><span class="cap-name">Balance inquiry</span><span class="cap-pri">Must have</span></li>
+<li><span class="cap-id cap-must">B6</span><span class="cap-name">Statement retrieval</span><span class="cap-pri">Must have</span></li>
+<li><span class="cap-id cap-should">B7</span><span class="cap-name">Payment status query</span><span class="cap-pri">Should have</span></li>
+<li><span class="cap-id cap-nice">B8</span><span class="cap-name">Escrow account closure</span><span class="cap-pri">Nice to have</span></li>
+<li><span class="cap-id cap-must">B9</span><span class="cap-name">Consent &amp; OAuth 2.0 authorisation</span><span class="cap-pri">Must have</span></li>
+  </ul>
+  <p class="meta" style="margin-top:14px">
+    Every capability has a defined manual fallback so the flow can run before the API is complete.
+    The highest-leverage ask is not on this list: <strong>per-lender virtual account numbers under a project
+    escrow account</strong>, which would make inbound attribution deterministic and remove reference-matching
+    risk entirely.
+  </p>
+</section>
+
+<details>
+  <summary>Text equivalent &mdash; every lane action, step by step</summary>
+  <table>
+    <thead><tr><th>Step</th><th>Stage</th><th>Lane</th><th>Action</th></tr></thead>
+    <tbody>
+<tr><td class="tnum">1</td><td>Onboarding &amp; Verification</td><td>SME (Borrower)</td><td>Registers; submits business registration and legal-rep ID for KYB</td></tr>
+<tr><td class="tnum">1</td><td>Onboarding &amp; Verification</td><td>Lender (Investor)</td><td>Registers; completes KYC</td></tr>
+<tr><td class="tnum">1</td><td>Onboarding &amp; Verification</td><td>FundLok (Platform)</td><td>Runs KYB/KYC via Didit; compiles beneficiary register for VPBank</td></tr>
+<tr><td class="tnum">1</td><td>Onboarding &amp; Verification</td><td>VPBank (Escrow Bank)</td><td>CDD on FundLok as account holder of record; agrees beneficiary register format</td></tr>
+<tr><td class="tnum">1</td><td>Onboarding &amp; Verification</td><td>Third Parties</td><td>Didit - identity and business verification</td></tr>
+<tr><td class="tnum">2</td><td>Settlement Account Linking</td><td>SME (Borrower)</td><td>Links own settlement account (bank or licensed e-wallet)</td></tr>
+<tr><td class="tnum">2</td><td>Settlement Account Linking</td><td>Lender (Investor)</td><td>Links own settlement account (bank or licensed e-wallet)</td></tr>
+<tr><td class="tnum">2</td><td>Settlement Account Linking</td><td>FundLok (Platform)</td><td>Stores masked ref only; verifies name match; records revocable consent</td></tr>
+<tr><td class="tnum">2</td><td>Settlement Account Linking</td><td>VPBank (Escrow Bank)</td><td>Account name verification against verified legal name; consent capture</td></tr>
+<tr><td class="tnum">2</td><td>Settlement Account Linking</td><td>Third Parties</td><td>NAPAS - account name inquiry rails</td></tr>
+<tr><td class="tnum">3</td><td>Listing, Grading &amp; Contract</td><td>SME (Borrower)</td><td>Describes enterprise + project; applies for loan; signs contract</td></tr>
+<tr><td class="tnum">3</td><td>Listing, Grading &amp; Contract</td><td>Lender (Investor)</td><td>Browses marketplace; reviews graded listings</td></tr>
+<tr><td class="tnum">3</td><td>Listing, Grading &amp; Contract</td><td>FundLok (Platform)</td><td>Grading engine sets rate tier; ScoreRun LOCKED; ADMIN approves; Contract SIGNED</td></tr>
+<tr><td class="tnum">3</td><td>Listing, Grading &amp; Contract</td><td>VPBank (Escrow Bank)</td><td>Optional: CIC credit lookup as a member institution</td></tr>
+<tr><td class="tnum">3</td><td>Listing, Grading &amp; Contract</td><td>Third Parties</td><td>CIC - National Credit Information Centre (route TBD)</td></tr>
+<tr><td class="tnum">4</td><td>Escrow Account Provisioning</td><td>FundLok (Platform)</td><td>Requests escrow a/c; writes custodial_account scope=CONTRACT; builds chart of accounts; ADMIN gate</td></tr>
+<tr><td class="tnum">4</td><td>Escrow Account Provisioning</td><td>VPBank (Escrow Bank)</td><td>Opens FBO escrow account for the project; returns account number + status</td></tr>
+<tr><td class="tnum">5</td><td>Lender Funding into Escrow</td><td>Lender (Investor)</td><td>Places order; pays into project escrow quoting reference (or virtual a/c)</td></tr>
+<tr><td class="tnum">5</td><td>Lender Funding into Escrow</td><td>FundLok (Platform)</td><td>Order PENDING_PAYMENT + reference; matches credit; posts FUNDING; order FILLED; unmatched to SUSPENSE</td></tr>
+<tr><td class="tnum">5</td><td>Lender Funding into Escrow</td><td>VPBank (Escrow Bank)</td><td>Notifies FL of inbound credit with amount, value date, remitter, reference</td></tr>
+<tr><td class="tnum">5</td><td>Lender Funding into Escrow</td><td>Third Parties</td><td>NAPAS - interbank credit rails</td></tr>
+<tr><td class="tnum">6</td><td>Disbursement to SME</td><td>SME (Borrower)</td><td>Receives disbursement, net of FL fee</td></tr>
+<tr><td class="tnum">6</td><td>Disbursement to SME</td><td>FundLok (Platform)</td><td>Checks balance; instructs payout net of fee; posts DISBURSEMENT + FEE atomically</td></tr>
+<tr><td class="tnum">6</td><td>Disbursement to SME</td><td>VPBank (Escrow Bank)</td><td>Returns balance; executes credit transfer on FL instruction; reports status</td></tr>
+<tr><td class="tnum">6</td><td>Disbursement to SME</td><td>Third Parties</td><td>NAPAS - interbank credit rails</td></tr>
+<tr><td class="tnum">7</td><td>Repayment Collection</td><td>SME (Borrower)</td><td>Repays principal + interest on schedule. Early repayment encouraged</td></tr>
+<tr><td class="tnum">7</td><td>Repayment Collection</td><td>FundLok (Platform)</td><td>Matches credit to instalment; posts REPAYMENT; recalculates schedule on early repayment</td></tr>
+<tr><td class="tnum">7</td><td>Repayment Collection</td><td>VPBank (Escrow Bank)</td><td>Notifies FL of inbound credit; optional standing instruction / direct debit</td></tr>
+<tr><td class="tnum">7</td><td>Repayment Collection</td><td>Third Parties</td><td>NAPAS - interbank credit rails</td></tr>
+<tr><td class="tnum">8</td><td>Distribution to Lenders</td><td>Lender (Investor)</td><td>Receives pro-rata distribution</td></tr>
+<tr><td class="tnum">8</td><td>Distribution to Lenders</td><td>FundLok (Platform)</td><td>Computes pro-rata; instructs batch payout; posts REPAYMENT_SPLIT (N DISTRIBUTION + FEE)</td></tr>
+<tr><td class="tnum">8</td><td>Distribution to Lenders</td><td>VPBank (Escrow Bank)</td><td>Executes batch credit transfer with per-leg status; failed legs stay in escrow</td></tr>
+<tr><td class="tnum">8</td><td>Distribution to Lenders</td><td>Third Parties</td><td>NAPAS - interbank credit rails</td></tr>
+<tr><td class="tnum">9</td><td>Closure &amp; Account Close</td><td>SME (Borrower)</td><td>Obligation discharged</td></tr>
+<tr><td class="tnum">9</td><td>Closure &amp; Account Close</td><td>Lender (Investor)</td><td>Receives converted shares</td></tr>
+<tr><td class="tnum">9</td><td>Closure &amp; Account Close</td><td>FundLok (Platform)</td><td>Issues shares; reconciles escrow to zero; Contract CLOSED; requests a/c closure</td></tr>
+<tr><td class="tnum">9</td><td>Closure &amp; Account Close</td><td>VPBank (Escrow Bank)</td><td>Issues final statement; closes the zero-balance escrow account</td></tr>
+<tr><td class="tnum">9</td><td>Closure &amp; Account Close</td><td>Third Parties</td><td>SBV - periodic reporting and audit inspection</td></tr>
+    </tbody>
+  </table>
+</details>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    btn.addEventListener('click', function () {
+      var root = document.documentElement;
+      var isDark = root.getAttribute('data-theme') === 'dark'
+        || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    });
+  })();
+</script>
+</body>
+</html>

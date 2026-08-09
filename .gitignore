@@ -229,3 +229,9 @@ pgdata/
 # Claude Code local machine settings
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# VPBank proposal — generated artefacts. Rebuild with 05-generators/build_all.sh
+# (the sources of truth are 03-section-sources/*.md and the generators themselves).
+docs/specs/banking/vpbank-proposal/**/*.pdf
+docs/specs/banking/vpbank-proposal/05-generators/*-print.html
+docs/specs/banking/vpbank-proposal/_superseded/*.zip

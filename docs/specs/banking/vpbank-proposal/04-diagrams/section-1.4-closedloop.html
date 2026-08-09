@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="#2a78d6,#eb6834,#1baf7a,#4a3aa7">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Section 1.4 — the closed loop, and the gate on FundLok&#x27;s fee</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --band:#fcfcfb; --bandalt:#f6f6f3; --cellbg:#ffffff; --esbg:#f1f0ec; --headband:#f2f2ee;
+    --panel:#f6f6f3; --card:#ffffff;
+    --pr:#2a78d6; --fe:#eb6834; --rp:#1baf7a; --wd:#4a3aa7;
+    --p1:#2a78d6; --p2:#eb6834; --p3:#1baf7a; --p4:#4a3aa7;
+    --ins:#7d7b74;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#4a4945; --border:rgba(255,255,255,0.10);
+      --band:#1a1a19; --bandalt:#201f1e; --cellbg:#242422; --esbg:#2b2a27; --headband:#232322;
+      --panel:#201f1e; --card:#242422;
+      --pr:#3987e5; --fe:#d95926; --rp:#199e70; --wd:#9085e9;
+      --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+      --ins:#98968f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#4a4945; --border:rgba(255,255,255,0.10);
+    --band:#1a1a19; --bandalt:#201f1e; --cellbg:#242422; --esbg:#2b2a27; --headband:#232322;
+    --panel:#201f1e; --card:#242422;
+    --pr:#3987e5; --fe:#d95926; --rp:#199e70; --wd:#9085e9;
+    --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+    --ins:#98968f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 22px 48px;background:var(--plane);color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.55}
+  header,figure,details{max-width:1260px;margin-left:auto;margin-right:auto}
+  h1{font-size:21px;margin:0 0 6px;letter-spacing:-0.01em}
+  .sub{color:var(--ink-2);margin:0 0 4px} .meta{color:var(--muted);font-size:12.5px;margin:0}
+  .toolbar{max-width:1260px;margin:16px auto 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1px solid var(--border);
+          background:var(--surface-1);color:var(--ink-2);cursor:pointer}
+  .legend{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);align-items:center}
+  .legend .sw{display:inline-block;width:20px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}
+  .sw-pr{background:var(--pr)} .sw-fe{background:var(--fe)} .sw-rp{background:var(--rp)}
+  .sw-wd{background:var(--wd)} .sw-ins{background:var(--ins)}
+  .scroller{overflow-x:auto;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:6px}
+  svg{display:block;width:100%;height:auto}
+  .band{fill:var(--band)} .bandalt{fill:var(--bandalt)} .headband{fill:var(--headband)}
+  .rowsep,.colsep{stroke:var(--grid);stroke-width:1}
+  .nodebox{fill:var(--cellbg);stroke:var(--border);stroke-width:1}
+  .nodebox-es{fill:var(--esbg);stroke:var(--border);stroke-width:1.4}
+  .nodedash{fill:none;stroke:var(--axis);stroke-width:1;stroke-dasharray:3 3}
+  .instrbox{fill:var(--cellbg);stroke:var(--ink-2);stroke-width:1.3}
+  .instrline{stroke:none;opacity:0.11}
+  .l-pr{fill:var(--pr)} .l-fe{fill:var(--fe)}
+  .instrtitle{font-size:11px;font-weight:660;fill:var(--ink)}
+  .instrtag{font-size:8.6px;fill:var(--muted)}
+  .instrtx{font-size:9.4px;font-weight:600}
+  .nodelabel{font-size:10.8px;font-weight:640;fill:var(--ink)}
+  .nodesub{font-size:9.2px;fill:var(--muted)}
+  .edge{fill:none;stroke-width:1.8} .edge.dashed{stroke-width:1.4;stroke-dasharray:4 3}
+  .e-pr{stroke:var(--pr)} .e-fe{stroke:var(--fe)} .e-rp{stroke:var(--rp)}
+  .e-wd{stroke:var(--wd)} .e-ins{stroke:var(--ins)}
+  .edgelabel{font-size:9.4px;font-weight:640;fill:var(--ink-2)}
+  .t-pr{fill:var(--pr)} .t-fe{fill:var(--fe)} .t-rp{fill:var(--rp)} .t-wd{fill:var(--wd)}
+  .f-pr{fill:var(--pr)} .f-fe{fill:var(--fe)} .f-rp{fill:var(--rp)} .f-wd{fill:var(--wd)}
+  .f-es{fill:var(--muted)} .f-ins{fill:var(--ins)} .f-p4{fill:var(--p4)}
+  .p1-fill{fill:var(--p1)} .p2-fill{fill:var(--p2)} .p3-fill{fill:var(--p3)} .p4-fill{fill:var(--p4)}
+  .plate{stroke:none}
+  .t1{font-size:11px;fill:var(--ink-2)}
+  .closed{font-size:12px;font-weight:680;fill:var(--rp)}
+  .lanename{font-size:12.5px;font-weight:660;fill:var(--ink)}
+  .lanerole{font-size:9.2px;fill:var(--muted)}
+  .stnum{font-size:9.6px;font-weight:700;fill:var(--surface-1)} .stnum-bg{fill:var(--ink)}
+  .stname{font-size:11.4px;font-weight:660;fill:var(--ink)}
+  .stfreq{font-size:9px;fill:var(--muted)}
+  .feetagtx{font-size:8.8px;font-weight:680;fill:var(--fe)}
+  .feebar{opacity:0.85}
+  .gatebox{fill:var(--card);stroke:var(--p4);stroke-width:1.2}
+  .gatetx{font-size:8.8px;font-weight:700;fill:var(--p4)}
+  .instrarr{font-size:8.8px;fill:var(--ins)}
+  .panel{fill:var(--panel);stroke:var(--border);stroke-width:1}
+  .ptitle{font-size:12.4px;font-weight:680;fill:var(--ink)}
+  .psub{font-size:9.6px;fill:var(--ink-2)}
+  .gatecard{fill:var(--card);stroke:var(--border);stroke-width:1}
+  .passcard{fill:var(--card);stroke:var(--rp);stroke-width:1.3}
+  .gnum{font-size:9px;font-weight:700;fill:var(--card)} .gnum-bg{fill:var(--p4)}
+  .gname{font-size:11px;font-weight:680;fill:var(--ink)}
+  .passname{font-size:11px;font-weight:700;fill:var(--rp)}
+  .gq{font-size:9.4px;fill:var(--ink-2)}
+  .gf{font-size:8.8px;fill:var(--muted);font-style:italic}
+  .chev{fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .failbar{fill:none;stroke:var(--ink-2);stroke-width:1.2;stroke-dasharray:5 3}
+  .failname{font-size:10.4px;font-weight:700;fill:var(--ink)}
+  .faildesc{font-size:9.4px;fill:var(--ink-2)}
+  .note{font-size:9.6px;fill:var(--ink-2)}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:11px}
+  figcaption p{margin:0 0 5px}
+  figure.second{margin-top:24px}
+  summary{cursor:pointer;font-size:13px;color:var(--ink-2)} details{margin-top:24px}
+  table{border-collapse:collapse;width:100%;margin:12px 0 20px;font-size:12.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{color:var(--muted);font-weight:620;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}
+  h3{font-size:12.5px;margin:18px 0 0;color:var(--ink-2)}
+  .tref{font-weight:700;color:var(--ink-2);white-space:nowrap}
+  @media print{
+    @page { size: A4 landscape; margin: 9mm 11mm; }
+    body{padding:0;background:#fff} .toolbar{display:none}
+    .scroller{overflow:visible;border:none;padding:0;background:none}
+    header{margin-bottom:5px} h1{font-size:12.5pt} .sub{font-size:8.4pt;margin-bottom:2px}
+    .meta{font-size:7.6pt}
+    figure{max-width:none;text-align:center;margin:0;break-inside:avoid}
+    figure.second{break-before:page;margin-top:0}
+    svg{width:238mm!important;height:auto!important;margin:0 auto}
+    figure.second svg{width:246mm!important}
+    figcaption{font-size:7.4pt;text-align:left;margin-top:4px}
+    details{break-before:avoid;margin-top:8px;max-width:none}
+    summary{font-size:8.4pt;font-weight:700;list-style:none}
+    h3{font-size:8pt;margin:10px 0 0}
+    table{font-size:7pt;margin:4px 0 8px}
+    th,td{padding:2.5px 6px}
+    tr{break-inside:avoid}
+  }
+</style></head>
+<body>
+<header>
+  <h1>Section 1.4 — the closed loop, and the gate on FundLok&#x27;s fee</h1>
+  <p class="sub">Money never leaves the escrow perimeter except to an account already registered as a permitted destination. FundLok&#x27;s fee is a line inside a beneficiary payment, not a payment of its own.</p>
+  <p class="meta">Working case: loan of VND 2.5 billion, eight participating investors, 1% disbursement fee. FundLok internal estimates dated 5 August 2026.</p>
+</header>
+<div class="toolbar">
+  <button id="themeBtn" type="button">Toggle dark mode</button>
+  <div class="legend"><span><span class="sw sw-pr"></span>Principal</span>
+<span><span class="sw sw-fe"></span>FundLok fee — inside a beneficiary instruction</span>
+<span><span class="sw sw-rp"></span>Repayment &amp; allocation</span>
+<span><span class="sw sw-wd"></span>Withdrawal &amp; reinvestment</span>
+<span><span class="sw sw-ins"></span>Instruction — data, not money</span></div>
+</div>
+<figure>
+  <div class="scroller">
+    <svg viewBox="0 0 1204 788" role="img" aria-label="Section 1.4 — the closed loop, and the gate on FundLok&#x27;s fee">
+      <defs>
+        <marker id="a-pr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--pr)"/></marker>
+        <marker id="a-fe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--fe)"/></marker>
+        <marker id="a-rp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--rp)"/></marker>
+        <marker id="a-wd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--wd)"/></marker>
+        <marker id="a-ins" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ins)"/></marker>
+      </defs>
+<text class="t1" x="16" y="22">Every movement below is executed by VPBank on a dual-authorised instruction from FundLok. FundLok holds none of the funds and has no</text>
+<text class="t1" x="16" y="40">withdrawal right over the escrow account. Its own fee never travels alone — it rides inside an instruction that pays a beneficiary in the</text>
+<text class="t1" x="16" y="58">same movement, as a proportion VPBank can check on the face of the instruction.</text>
+<text class="closed" x="16" y="80">The loop is closed: whatever an investor receives can be paid out only to the bank account that investor funded from.</text>
+<rect class="band" x="0" y="196" width="1188" height="120"/>
+<rect class="laneedge p1-fill" x="0" y="196" width="4" height="120"/>
+<text class="lanename" x="14" y="222">Investor</text>
+<text class="lanerole" x="14" y="240">lender of record</text>
+<rect class="bandalt" x="0" y="316" width="1188" height="104"/>
+<rect class="laneedge p2-fill" x="0" y="316" width="4" height="104"/>
+<text class="lanename" x="14" y="342">SME</text>
+<text class="lanerole" x="14" y="360">borrower</text>
+<rect class="band" x="0" y="420" width="1188" height="108"/>
+<rect class="laneedge p4-fill" x="0" y="420" width="4" height="108"/>
+<text class="lanename" x="14" y="446">VPBank</text>
+<text class="lanerole" x="14" y="464">custodian — holds and</text>
+<text class="lanerole" x="14" y="476">moves the money</text>
+<rect class="bandalt" x="0" y="528" width="1188" height="250"/>
+<rect class="laneedge p3-fill" x="0" y="528" width="4" height="250"/>
+<text class="lanename" x="14" y="554">FundLok</text>
+<text class="lanerole" x="14" y="572">arranger &amp; servicer —</text>
+<text class="lanerole" x="14" y="584">issues instructions,</text>
+<text class="lanerole" x="14" y="596">holds no escrow funds</text>
+<rect class="headband" x="0" y="94" width="1188" height="70"/>
+<circle class="stnum-bg" cx="193" cy="113" r="10"/>
+<text class="stnum" x="193" y="117" text-anchor="middle">1</text>
+<text class="stname" x="209" y="117">Funding</text>
+<text class="stfreq" x="183" y="145">once, as each investor commits</text>
+<circle class="stnum-bg" cx="399" cy="113" r="10"/>
+<text class="stnum" x="399" y="117" text-anchor="middle">2</text>
+<text class="stname" x="415" y="117">Disbursement</text>
+<text class="stfreq" x="389" y="145">once, when the target is met</text>
+<rect class="feebar f-fe" x="365" y="95" width="204" height="3"/>
+<text class="feetagtx" x="389" y="158">fee-bearing</text>
+<circle class="stnum-bg" cx="605" cy="113" r="10"/>
+<text class="stnum" x="605" y="117" text-anchor="middle">3</text>
+<text class="stname" x="621" y="117">Daily collection</text>
+<text class="stfreq" x="595" y="145">every business day</text>
+<circle class="stnum-bg" cx="811" cy="113" r="10"/>
+<text class="stnum" x="811" y="117" text-anchor="middle">4</text>
+<text class="stname" x="827" y="117">Daily allocation</text>
+<text class="stfreq" x="801" y="145">every business day</text>
+<rect class="feebar f-fe" x="777" y="95" width="204" height="3"/>
+<text class="feetagtx" x="801" y="158">fee-bearing</text>
+<circle class="stnum-bg" cx="1017" cy="113" r="10"/>
+<text class="stnum" x="1017" y="117" text-anchor="middle">5</text>
+<text class="stname" x="1033" y="117">Withdrawal or</text>
+<text class="stname" x="1007" y="130">reinvestment</text>
+<text class="stfreq" x="1007" y="145">on the investor&#x27;s request</text>
+<line class="colsep" x1="158" y1="94" x2="158" y2="778"/>
+<line class="colsep" x1="364" y1="94" x2="364" y2="778"/>
+<line class="colsep" x1="570" y1="94" x2="570" y2="778"/>
+<line class="colsep" x1="776" y1="94" x2="776" y2="778"/>
+<line class="colsep" x1="982" y1="94" x2="982" y2="778"/>
+<line class="colsep" x1="1188" y1="94" x2="1188" y2="778"/>
+<line class="rowsep" x1="0" y1="196" x2="1188" y2="196"/>
+<line class="rowsep" x1="0" y1="316" x2="1188" y2="316"/>
+<line class="rowsep" x1="0" y1="420" x2="1188" y2="420"/>
+<line class="rowsep" x1="0" y1="528" x2="1188" y2="528"/>
+<line class="rowsep" x1="0" y1="778" x2="1188" y2="778"/>
+<rect class="nodebox" x="183" y="214" width="156" height="74" rx="6"/>
+<rect class="nodeedge f-pr" x="183" y="214" width="3.5" height="74" rx="1.75"/>
+<text class="nodelabel" x="195" y="231">
+<tspan x="195" dy="0">Investor&#x27;s own bank</tspan>
+<tspan x="195" dy="12">account</tspan>
+</text>
+<text class="nodesub" x="195" y="258">
+<tspan x="195" dy="0">recorded at M1 — the only</tspan>
+<tspan x="195" dy="10.5">external destination open</tspan>
+<tspan x="195" dy="10.5">to them thereafter</tspan>
+</text>
+<rect class="nodedash" x="801" y="214" width="156" height="74" rx="6"/>
+<text class="nodelabel" x="813" y="231">
+<tspan x="813" dy="0">Balance available same</tspan>
+<tspan x="813" dy="12">day</tspan>
+</text>
+<text class="nodesub" x="813" y="258">
+<tspan x="813" dy="0">visible on the platform;</tspan>
+<tspan x="813" dy="10.5">transferred only when</tspan>
+<tspan x="813" dy="10.5">asked for</tspan>
+</text>
+<rect class="nodedash" x="988" y="214" width="140" height="74" rx="6"/>
+<text class="nodelabel" x="1000" y="231">
+<tspan x="1000" dy="0">Withdrawal request</tspan>
+</text>
+<text class="nodesub" x="1000" y="246">
+<tspan x="1000" dy="0">the amount is theirs;</tspan>
+<tspan x="1000" dy="10.5">the destination is not</tspan>
+<tspan x="1000" dy="10.5">selectable</tspan>
+</text>
+<rect class="nodebox" x="389" y="340" width="156" height="58" rx="6"/>
+<rect class="nodeedge f-pr" x="389" y="340" width="3.5" height="58" rx="1.75"/>
+<text class="nodelabel" x="401" y="360">
+<tspan x="401" dy="0">SME&#x27;s verified account</tspan>
+</text>
+<text class="nodesub" x="401" y="375">
+<tspan x="401" dy="0">receives the principal</tspan>
+<tspan x="401" dy="10.5">less the 1% fee</tspan>
+</text>
+<rect class="nodebox" x="595" y="340" width="156" height="58" rx="6"/>
+<rect class="nodeedge f-rp" x="595" y="340" width="3.5" height="58" rx="1.75"/>
+<text class="nodelabel" x="607" y="360">
+<tspan x="607" dy="0">Daily revenue share</tspan>
+</text>
+<text class="nodesub" x="607" y="375">
+<tspan x="607" dy="0">a % of prior-day revenue,</tspan>
+<tspan x="607" dy="10.5">computed from T-VAN</tspan>
+</text>
+<rect class="nodebox-es" x="183" y="444" width="774" height="60" rx="6"/>
+<rect class="nodeedge f-es" x="183" y="444" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="195" y="464">
+<tspan x="195" dy="0">Project escrow account — restricted, at VPBank</tspan>
+</text>
+<text class="nodesub" x="195" y="479">
+<tspan x="195" dy="0">all principal and all receipts rest here · FundLok has no withdrawal right</tspan>
+</text>
+<rect class="nodebox-es" x="1007" y="444" width="156" height="68" rx="6"/>
+<rect class="nodeedge f-es" x="1007" y="444" width="3.5" height="68" rx="1.75"/>
+<text class="nodelabel" x="1019" y="461">
+<tspan x="1019" dy="0">Investor holdings at</tspan>
+<tspan x="1019" dy="12">VPBank</tspan>
+</text>
+<text class="nodesub" x="1019" y="488">
+<tspan x="1019" dy="0">one escrow account per</tspan>
+<tspan x="1019" dy="10.5">investor under Option B</tspan>
+</text>
+<rect class="nodebox" x="183" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="183" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="195" y="605">
+<tspan x="195" dy="0">Match and record</tspan>
+</text>
+<text class="nodesub" x="195" y="620">
+<tspan x="195" dy="0">records the originating</tspan>
+<tspan x="195" dy="10.5">account — no funds</tspan>
+<tspan x="195" dy="10.5">touched</tspan>
+</text>
+<rect class="nodebox" x="595" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="595" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="607" y="608">
+<tspan x="607" dy="0">Compute and request</tspan>
+</text>
+<text class="nodesub" x="607" y="623">
+<tspan x="607" dy="0">reads T-VAN; issues the</tspan>
+<tspan x="607" dy="10.5">payment request</tspan>
+</text>
+<rect class="nodebox" x="1007" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="1007" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="1019" y="608">
+<tspan x="1019" dy="0">Relay only</tspan>
+</text>
+<text class="nodesub" x="1019" y="623">
+<tspan x="1019" dy="0">cannot alter, add or</tspan>
+<tspan x="1019" dy="10.5">substitute a destination</tspan>
+</text>
+<rect class="nodebox" x="366" y="710" width="591" height="54" rx="6"/>
+<rect class="nodeedge f-fe" x="366" y="710" width="3.5" height="54" rx="1.75"/>
+<text class="nodelabel" x="378" y="730">
+<tspan x="378" dy="0">FundLok fee account — outside the escrow perimeter</tspan>
+</text>
+<text class="nodesub" x="378" y="745">
+<tspan x="378" dy="0">credited only as a line inside an instruction that pays a beneficiary in the same movement</tspan>
+</text>
+<rect class="instrbox" x="389" y="562" width="156" height="136" rx="6"/>
+<rect class="nodeedge f-ins" x="389" y="562" width="3.5" height="136" rx="1.75"/>
+<text class="instrtitle" x="401" y="578">Disbursement</text>
+<text class="instrtitle" x="401" y="590">instruction</text>
+<text class="instrtag" x="401" y="603">dual authorisation · one</text>
+<text class="instrtag" x="401" y="613">instruction, two lines</text>
+<rect class="instrline l-pr" x="398" y="620" width="138" height="25" rx="3"/>
+<text class="instrtx t-pr" x="403" y="628">1 · pay the SME — gross</text>
+<text class="instrtx t-pr" x="403" y="639">principal less 1%</text>
+<rect class="instrline l-fe" x="398" y="651" width="138" height="25" rx="3"/>
+<text class="instrtx t-fe" x="403" y="659">2 · pay FundLok — 1% of</text>
+<text class="instrtx t-fe" x="403" y="670">the gross</text>
+<rect class="instrbox" x="801" y="562" width="156" height="136" rx="6"/>
+<rect class="nodeedge f-ins" x="801" y="562" width="3.5" height="136" rx="1.75"/>
+<text class="instrtitle" x="813" y="578">Allocation instruction</text>
+<text class="instrtag" x="813" y="591">dual authorisation · one</text>
+<text class="instrtag" x="813" y="601">instruction, two lines</text>
+<rect class="instrline l-pr" x="810" y="608" width="138" height="25" rx="3"/>
+<text class="instrtx t-pr" x="815" y="616">1 · pay each investor —</text>
+<text class="instrtx t-pr" x="815" y="627">pro-rata share</text>
+<rect class="instrline l-fe" x="810" y="639" width="138" height="25" rx="3"/>
+<text class="instrtx t-fe" x="815" y="647">2 · pay FundLok — a % of</text>
+<text class="instrtx t-fe" x="815" y="658">that same allocation</text>
+<path class="edge e-pr" d="M 243 288 V 436" marker-end="url(#a-pr)"/>
+<rect class="plate bandalt" x="203.0" y="322" width="80.0" height="13" rx="3"/>
+<text class="edgelabel t-pr" x="243" y="332" text-anchor="middle">M1 · principal</text>
+<path class="edge e-pr" d="M 449 444 V 406" marker-end="url(#a-pr)"/>
+<rect class="plate band" x="386.5" y="426" width="125.0" height="13" rx="3"/>
+<text class="edgelabel t-pr" x="449" y="436" text-anchor="middle">M2 · principal less fee</text>
+<path class="edge e-rp" d="M 691 398 V 436" marker-end="url(#a-rp)"/>
+<rect class="plate band" x="626.0" y="426" width="130.0" height="13" rx="3"/>
+<text class="edgelabel t-rp" x="691" y="436" text-anchor="middle">M4 · daily revenue share</text>
+<path class="edge e-rp" d="M 960 462 H 999" marker-end="url(#a-rp)"/>
+<path class="edge e-wd" d="M 1004 488 H 965" marker-end="url(#a-wd)"/>
+<rect class="plate band" x="887.5" y="426" width="85.0" height="13" rx="3"/>
+<text class="edgelabel t-rp" x="930" y="436" text-anchor="middle">M5 · allocation</text>
+<rect class="plate band" x="882.5" y="510" width="95.0" height="13" rx="3"/>
+<text class="edgelabel t-wd" x="930" y="520" text-anchor="middle">M8 · reinvestment</text>
+<path class="edge e-fe" d="M 375 504 V 702" marker-end="url(#a-fe)"/>
+<rect class="plate bandalt" x="367.5" y="534" width="115.0" height="13" rx="3"/>
+<text class="edgelabel t-fe" x="425" y="544" text-anchor="middle">M3 · disbursement fee</text>
+<path class="edge e-fe" d="M 787 504 V 702" marker-end="url(#a-fe)"/>
+<rect class="plate bandalt" x="784.5" y="534" width="105.0" height="13" rx="3"/>
+<text class="edgelabel t-fe" x="837" y="544" text-anchor="middle">M6 · management fee</text>
+<path class="edge e-ins dashed" d="M 514 562 V 512" marker-end="url(#a-ins)"/>
+<rect class="gatebox" x="490.8" y="537" width="46.4" height="17" rx="8.5"/>
+<text class="gatetx" x="514" y="549" text-anchor="middle">gate</text>
+<path class="edge e-ins dashed" d="M 926 562 V 512" marker-end="url(#a-ins)"/>
+<rect class="gatebox" x="902.8" y="537" width="46.4" height="17" rx="8.5"/>
+<text class="gatetx" x="926" y="549" text-anchor="middle">gate</text>
+<path class="edge e-wd" d="M 1143 444 V 180 H 148 V 251.0 H 175" marker-end="url(#a-wd)"/>
+<rect class="plate band" x="377.5" y="164" width="410.0" height="13" rx="3"/>
+<text class="edgelabel t-wd" x="582.5" y="174" text-anchor="middle">M7 · withdrawal — to the registered account, and no other. The loop closes here.</text>
+    </svg>
+  </div>
+  <figcaption>
+    <p>Colour carries the kind of movement. The two orange lines, M3 and M6, are the only movements that reach FundLok, and each is a line inside the instruction that pays a beneficiary in the same movement — never an instruction of its own. FundLok is never a permitted destination for principal.</p>
+  </figcaption>
+</figure>
+<figure class="second">
+  <div class="scroller">
+    <svg viewBox="0 0 1204 328" role="img" aria-label="The gate, expanded — VPBank&#x27;s control on every instruction that contains a FundLok fee line (M3, M6)">
+<rect class="panel" x="12" y="8" width="1176" height="254" rx="10"/>
+<text class="ptitle" x="26" y="32">The gate, expanded — VPBank&#x27;s control on every instruction that contains a FundLok fee line (M3, M6)</text>
+<text class="psub" x="26" y="49">Four checks, all on the face of the instruction. VPBank needs no knowledge of the loan to apply them.</text>
+<rect class="gatecard" x="26" y="62" width="214" height="132" rx="7"/>
+<rect class="nodeedge f-p4" x="26" y="62" width="3.5" height="132" rx="1.75"/>
+<circle class="gnum-bg" cx="50" cy="82" r="9"/>
+<text class="gnum" x="50" y="85.5" text-anchor="middle">1</text>
+<text class="gname" x="65" y="86">Destination</text>
+<text class="gq" x="39" y="105">
+<tspan x="39" dy="0">Is every beneficiary on the</tspan>
+<tspan x="39" dy="11">registered permitted-destination</tspan>
+<tspan x="39" dy="11">list?</tspan>
+</text>
+<text class="gf" x="39" y="144">
+<tspan x="39" dy="0">Fails on any account not on the list</tspan>
+<tspan x="39" dy="10">— including FundLok&#x27;s own.</tspan>
+</text>
+<path class="chev" d="M 246.0 123.0 l 5 5 l -5 5"/>
+<rect class="gatecard" x="260" y="62" width="214" height="132" rx="7"/>
+<rect class="nodeedge f-p4" x="260" y="62" width="3.5" height="132" rx="1.75"/>
+<circle class="gnum-bg" cx="284" cy="82" r="9"/>
+<text class="gnum" x="284" y="85.5" text-anchor="middle">2</text>
+<text class="gname" x="299" y="86">Pairing</text>
+<text class="gq" x="273" y="105">
+<tspan x="273" dy="0">Does the fee line sit inside an</tspan>
+<tspan x="273" dy="11">instruction that also pays a</tspan>
+<tspan x="273" dy="11">beneficiary?</tspan>
+</text>
+<text class="gf" x="273" y="144">
+<tspan x="273" dy="0">Fails on a fee line standing alone,</tspan>
+<tspan x="273" dy="10">or any draw on an idle balance.</tspan>
+</text>
+<path class="chev" d="M 480.0 123.0 l 5 5 l -5 5"/>
+<rect class="gatecard" x="494" y="62" width="214" height="132" rx="7"/>
+<rect class="nodeedge f-p4" x="494" y="62" width="3.5" height="132" rx="1.75"/>
+<circle class="gnum-bg" cx="518" cy="82" r="9"/>
+<text class="gnum" x="518" y="85.5" text-anchor="middle">3</text>
+<text class="gname" x="533" y="86">Proportion and ceiling</text>
+<text class="gq" x="507" y="105">
+<tspan x="507" dy="0">Is the fee line within the</tspan>
+<tspan x="507" dy="11">registered proportion of this</tspan>
+<tspan x="507" dy="11">instruction, and within the</tspan>
+<tspan x="507" dy="11">registered ceiling?</tspan>
+</text>
+<text class="gf" x="507" y="155">
+<tspan x="507" dy="0">Arithmetic, not a representation.</tspan>
+<tspan x="507" dy="10">Both values to be confirmed with</tspan>
+<tspan x="507" dy="10">VPBank.</tspan>
+</text>
+<path class="chev" d="M 714.0 123.0 l 5 5 l -5 5"/>
+<rect class="gatecard" x="728" y="62" width="214" height="132" rx="7"/>
+<rect class="nodeedge f-p4" x="728" y="62" width="3.5" height="132" rx="1.75"/>
+<circle class="gnum-bg" cx="752" cy="82" r="9"/>
+<text class="gnum" x="752" y="85.5" text-anchor="middle">4</text>
+<text class="gname" x="767" y="86">Hold</text>
+<text class="gq" x="741" y="105">
+<tspan x="741" dy="0">Is either account held under the</tspan>
+<tspan x="741" dy="11">dispute mechanism?</tspan>
+</text>
+<text class="gf" x="741" y="133">
+<tspan x="741" dy="0">If held, the fee line is suspended</tspan>
+<tspan x="741" dy="10">for the duration — the beneficiary</tspan>
+<tspan x="741" dy="10">line still settles.</tspan>
+</text>
+<rect class="passcard" x="962" y="62" width="212" height="132" rx="7"/>
+<rect class="nodeedge f-rp" x="962" y="62" width="3.5" height="132" rx="1.75"/>
+<text class="passname" x="975" y="86">PASS</text>
+<text class="gq" x="975" y="105">
+<tspan x="975" dy="0">VPBank executes the beneficiary</tspan>
+<tspan x="975" dy="11">line and the fee line as one</tspan>
+<tspan x="975" dy="11">movement. Neither can settle</tspan>
+<tspan x="975" dy="11">without the other.</tspan>
+</text>
+<rect class="failbar" x="26" y="208" width="1148" height="38" rx="7"/>
+<text class="failname" x="40" y="227">FAIL at any gate</text>
+<text class="faildesc" x="165.6" y="227">
+<tspan x="165.6" dy="0">The whole instruction is rejected and returned to FundLok&#x27;s exception queue. No fee moves, no balance moves, and FundLok cannot resubmit against a</tspan>
+<tspan x="165.6" dy="12">different destination.</tspan>
+</text>
+<text class="note" x="16" y="288">How much FundLok can take is therefore not a policy FundLok promises to keep. It is arithmetic VPBank checks on each instruction, bounded twice — as a proportion of</text>
+<text class="note" x="16" y="303">that instruction, and by a registered ceiling.</text>
+    </svg>
+  </div>
+  <figcaption>
+    <p>Rates and ceilings are to be confirmed with VPBank; the mechanism does not depend on their values. Section 1.4.4 states the four constraints in full; Section 1.4.3 states the closed-loop rule.</p>
+  </figcaption>
+</figure>
+<details open>
+  <summary>Text equivalent</summary>
+  <h3>The movements</h3>
+  <table>
+    <thead><tr><th>Ref</th><th>Movement</th><th>From</th><th>To</th></tr></thead>
+    <tbody>
+<tr><td class="tref">M1</td><td>principal</td><td>Investor&#x27;s own bank account</td><td>Project escrow account — restricted, at VPBank</td></tr>
+<tr><td class="tref">M2</td><td>principal less fee</td><td>Project escrow account — restricted, at VPBank</td><td>SME&#x27;s verified account</td></tr>
+<tr><td class="tref">M3</td><td>disbursement fee</td><td>Project escrow account — restricted, at VPBank</td><td>FundLok fee account — outside the escrow perimeter</td></tr>
+<tr><td class="tref">M4</td><td>daily revenue share</td><td>Daily revenue share</td><td>Project escrow account — restricted, at VPBank</td></tr>
+<tr><td class="tref">M5</td><td>allocation</td><td>Project escrow account — restricted, at VPBank</td><td>Investor holdings at VPBank</td></tr>
+<tr><td class="tref">M6</td><td>management fee</td><td>Project escrow account — restricted, at VPBank</td><td>FundLok fee account — outside the escrow perimeter</td></tr>
+<tr><td class="tref">M7</td><td>withdrawal — to the registered account, and no other. The loop closes here.</td><td>Investor holdings at VPBank</td><td>Investor&#x27;s own bank account</td></tr>
+<tr><td class="tref">M8</td><td>reinvestment</td><td>Investor holdings at VPBank</td><td>Project escrow account — restricted, at VPBank</td></tr>
+    </tbody>
+  </table>
+  <h3>The four gates</h3>
+  <table>
+    <thead><tr><th>#</th><th>Gate</th><th>Check applied</th><th>Consequence</th></tr></thead>
+    <tbody>
+<tr><td class="tref">1</td><td><strong>Destination</strong></td><td>Is every beneficiary on the registered permitted-destination list?</td><td>Fails on any account not on the list — including FundLok&#x27;s own.</td></tr>
+<tr><td class="tref">2</td><td><strong>Pairing</strong></td><td>Does the fee line sit inside an instruction that also pays a beneficiary?</td><td>Fails on a fee line standing alone, or any draw on an idle balance.</td></tr>
+<tr><td class="tref">3</td><td><strong>Proportion and ceiling</strong></td><td>Is the fee line within the registered proportion of this instruction, and within the registered ceiling?</td><td>Arithmetic, not a representation. Both values to be confirmed with VPBank.</td></tr>
+<tr><td class="tref">4</td><td><strong>Hold</strong></td><td>Is either account held under the dispute mechanism?</td><td>If held, the fee line is suspended for the duration — the beneficiary line still settles.</td></tr>
+    </tbody>
+  </table>
+</details>
+<script>
+(function(){
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var r=document.documentElement;
+    var d=r.getAttribute('data-theme')==='dark'||(!r.hasAttribute('data-theme')&&matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme',d?'light':'dark');
+  });
+})();
+</script>
+</body></html>
