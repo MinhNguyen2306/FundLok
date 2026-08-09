@@ -168,18 +168,27 @@ async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]
 async def register_user(
     db: AsyncSession, user_in: UserCreate, background_tasks: BackgroundTasks
 ) -> dict:
-    """Register a new user without leaking whether the email/phone already exists.
+    """Register a new user without leaking whether the email already exists.
 
-    Every branch returns the same acknowledgement, so the endpoint can't be used
-    to enumerate registered accounts (mirrors forgot_password):
-      - new address        -> create the user, email a verification link
-      - email already taken -> email the real owner an "account exists" notice
-      - phone already taken -> stay silent (no SMS channel to notify)
+      - new address         -> create the user, email a verification link
+      - email already taken -> same acknowledgement as success, and email the
+                               real owner an "account exists" notice, so the
+                               endpoint can't be used to enumerate accounts
+                               (mirrors forgot_password)
+      - phone already taken -> reject with an explicit 400
+
+    The phone branch is deliberately NOT anti-enumerable. It was silent between
+    a333de9 and this change, which meant a legitimate signup whose number was
+    already on file got the "verification email sent" screen and then nothing —
+    no account, no email, no way to find out why. Product call: a user being
+    able to fix their own signup beats phone-number enumeration resistance,
+    which the email branch does not provide anyway once you know the address.
     """
     verify_turnstile_token(user_in.turnstile_token)
 
-    # Uniform response for all outcomes below. Wording must not imply success or
-    # failure of account creation specifically.
+    # Shared by the "created" and "email already taken" outcomes so the two are
+    # indistinguishable. Wording must not imply success or failure of account
+    # creation specifically.
     ack = {
         "status": "success",
         "message": "If these details are available, a verification email has been sent.",
@@ -198,7 +207,10 @@ async def register_user(
             await db.execute(select(User).where(User.phone == user_in.phone))
         ).scalar_one_or_none()
         if existing_phone is not None:
-            return ack
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone number already registered",
+            )
 
     new_user = User(
         email=user_in.email,

@@ -163,9 +163,16 @@ INSERT INTO application_documents (application_id, document_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- 5c. Loan Application Documents (R2 Cloudflare object metadata)
+--
+-- document_type is constrained (migration 381c588e3534) to the six keys the
+-- upload flow actually uses: legal_charter, business_registration,
+-- vat_tax_zip, financial_report, e_invoice_data, cic_report. They are NOT the
+-- uppercase vocabulary of the separate `documents.doc_type` column above --
+-- seeding FINANCIAL_STATEMENT/BANK_STATEMENT here failed the check constraint
+-- and aborted the whole seed under ON_ERROR_STOP.
 INSERT INTO loan_application_documents (id, loan_application_id, document_type, file_key, original_filename, content_type, file_size_bytes, status, uploaded_at, created_at, updated_at) VALUES
-('f4000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'FINANCIAL_STATEMENT', 'apps/40000000-0000-0000-0000-000000000001/financials_2025.pdf', 'financials_2025.pdf', 'application/pdf', 1540000, 'UPLOADED', '2026-02-02 15:30:00+07', '2026-02-02 15:00:00+07', NOW()),
-('f4000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'BANK_STATEMENT',      'apps/40000000-0000-0000-0000-000000000002/bank_statement_q4.pdf', 'bank_statement_q4.pdf', 'application/pdf', 2100000, 'UPLOADED', '2026-02-02 16:30:00+07', '2026-02-02 16:00:00+07', NOW())
+('f4000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'financial_report', 'apps/40000000-0000-0000-0000-000000000001/financials_2025.pdf', 'financials_2025.pdf', 'application/pdf', 1540000, 'UPLOADED', '2026-02-02 15:30:00+07', '2026-02-02 15:00:00+07', NOW()),
+('f4000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'cic_report',       'apps/40000000-0000-0000-0000-000000000002/cic_report_q4.pdf',   'cic_report_q4.pdf',   'application/pdf', 2100000, 'UPLOADED', '2026-02-02 16:30:00+07', '2026-02-02 16:00:00+07', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- =====================================================================

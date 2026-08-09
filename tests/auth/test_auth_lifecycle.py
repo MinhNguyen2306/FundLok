@@ -81,6 +81,45 @@ async def test_register_duplicate_email_is_not_enumerable(client):
     assert login_attacker.status_code == 401
 
 
+async def test_register_duplicate_phone_returns_explicit_400(client):
+    """A phone already on file is rejected with a message the UI can show.
+
+    Unlike the email branch this is deliberately enumerable — see
+    register_user's docstring. The silent version it replaces left a legitimate
+    signup with a recycled number on the "verification email sent" screen with
+    no account, no email and no way to find out why."""
+    phone = "0912000111"
+    first = await client.post(
+        "/auth/register",
+        json={
+            "email": "phone-owner@example.com",
+            "phone": phone,
+            "password": "Str0ngPassw0rd!1",
+            "full_name": "Phone Owner",
+        },
+    )
+    assert first.status_code == 201
+
+    second = await client.post(
+        "/auth/register",
+        json={
+            "email": "someone-else@example.com",
+            "phone": phone,
+            "password": "An0therPassw0rd!2",
+            "full_name": "Someone Else",
+        },
+    )
+    assert second.status_code == 400
+    assert second.json() == {"detail": "Phone number already registered"}
+
+    # And no account was created for the submitted address.
+    login_second = await client.post(
+        "/auth/login",
+        json={"email": "someone-else@example.com", "password": "An0therPassw0rd!2"},
+    )
+    assert login_second.status_code == 401
+
+
 async def test_login_with_bad_password_returns_401(client):
     email = "bad-password-user@example.com"
     await client.post(
