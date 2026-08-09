@@ -199,6 +199,94 @@ def send_password_reset_email(to_email: str, token: str) -> None:
     )
 
 
+def send_password_changed_notice(to_email: str, first_time: bool = False) -> None:
+    """Tell the account owner their password just changed.
+
+    Purely a security notification -- it carries no token and grants nothing.
+    Its whole job is to make an unauthorised change visible to the real owner
+    while they can still act on it, which is why it always names the recovery
+    route. Send it AFTER the change has been committed, so the email never
+    describes something that didn't happen.
+
+    `first_time` swaps the wording for an account setting its first password
+    (the OAuth case) -- "was changed" would be untrue there.
+    """
+    from datetime import datetime
+
+    reset_link = f"{settings.FRONTEND_URL}/forgot-password"
+
+    subject = (
+        "Your FundLok password was set"
+        if first_time
+        else "Your FundLok password was changed"
+    )
+    headline = "Your password was set" if first_time else "Your password was changed"
+    lede = (
+        "A password was just added to your <strong>FundLok</strong> account. You can now "
+        "sign in with your email address and password."
+        if first_time
+        else "The password on your <strong>FundLok</strong> account was just changed."
+    )
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }}
+        .wrapper {{ background-color: #f4f7f6; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .title {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0; }}
+        .content {{ color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 30px; }}
+        .cta-container {{ text-align: center; margin: 35px 0; }}
+        .cta-button {{ display: inline-block; padding: 14px 28px; background-color: #16a34a; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.25); }}
+        .footer {{ text-align: center; color: #9ca3af; font-size: 13px; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="container">
+          <div class="header">
+            <h1 class="title">{headline}</h1>
+          </div>
+          <div class="content">
+            <p>{lede}</p>
+            <p>If this was you, nothing further is needed — you can ignore this email.</p>
+            <p><strong>If this wasn't you</strong>, reset your password immediately using the button
+            below, and contact us so we can secure your account.</p>
+          </div>
+          <div class="cta-container">
+            <a href="{reset_link}" class="cta-button" style="color: #ffffff;">Reset your password</a>
+          </div>
+          <div class="footer">
+            <p>&copy; {datetime.now().year} FundLok. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </html>
+    """
+
+    text_content = (
+        (
+            "A password was just added to your FundLok account. You can now sign in "
+            "with your email address and password."
+            if first_time
+            else "The password on your FundLok account was just changed."
+        )
+        + " If this was you, no action is needed. If it wasn't, reset your password "
+        f"immediately at {reset_link} and contact us so we can secure your account."
+    )
+
+    send_email(
+        to_email=to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content,
+    )
+
+
 def send_existing_account_notice(to_email: str) -> None:
     """Notify the real owner that someone tried to register with their email.
 

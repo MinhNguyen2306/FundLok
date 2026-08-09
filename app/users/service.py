@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,8 +9,11 @@ from app.users.schemas import (
     AVATAR_MAX_SIZE,
     AvatarConfirmRequest,
     AvatarPresignRequest,
+    SetPasswordRequest,
     UserUpdateRequest,
 )
+from app.utils.email import send_password_changed_notice
+from app.utils.password import hash_password
 from app.utils.r2 import delete_object, head_object, presign_get, presign_put
 
 
@@ -39,8 +42,50 @@ def user_me_payload(user: User) -> dict:
         "email_verified": user.email_verified,
         "bio": user.bio,
         "avatar_url": build_avatar_url(user),
+        # Lets the profile page tell "change your password" from "set one for
+        # the first time" (OAuth-only accounts have no hash). Never expose the
+        # hash itself.
+        "has_password": bool(user.password_hash),
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+async def set_password(
+    db: AsyncSession,
+    body: SetPasswordRequest,
+    current_user: User,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """Give a passwordless account its first password.
+
+    Only ever a *first* password. An account that already has one is refused
+    and pointed at forgot-password, where the emailed token proves control of
+    the mailbox. That split is what makes this endpoint safe to serve off a
+    session alone: setting a first password can't take an account away from
+    anyone (there was no password login to lose), whereas overwriting an
+    existing one off a borrowed session would be account takeover.
+
+    NOTE: no account can currently reach this branch -- `users.password_hash`
+    is NOT NULL and registration always sets it, so every existing user is
+    rejected below. It becomes reachable once OAuth sign-in creates accounts
+    without a password; see the endpoint docstring.
+    """
+    if current_user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account already has a password. Use Forgot password to change it.",
+        )
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.add(current_user)
+    await db.commit()
+
+    # Queued only after the commit, so the notice can't describe a change that
+    # didn't land. `first_time=True` because "your password was changed" would
+    # be untrue for an account that never had one.
+    background_tasks.add_task(
+        send_password_changed_notice, to_email=current_user.email, first_time=True
+    )
 
 
 async def update_user_profile(db: AsyncSession, body: UserUpdateRequest, current_user: User) -> User:

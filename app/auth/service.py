@@ -25,6 +25,7 @@ from app.utils.jwt import (
 )
 from app.utils.email import (
     send_existing_account_notice,
+    send_password_changed_notice,
     send_password_reset_email,
     send_verification_email,
 )
@@ -35,7 +36,12 @@ from app.core.config import settings
 async def authenticate_user(db: AsyncSession, email: str, password: str):
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(password, user.password_hash):
+    # `password_hash` is nullable (OAuth accounts have none until the user sets
+    # one). Reject those before passlib sees a None hash -- it would raise
+    # rather than return False, turning a normal failed login into a 500.
+    if not user or not user.password_hash:
+        return None
+    if not verify_password(password, user.password_hash):
         return None
     return user
 
@@ -286,7 +292,9 @@ async def forgot_password(db: AsyncSession, body: ForgotPasswordRequest, backgro
     return response
 
 
-async def reset_password(db: AsyncSession, body: ResetPasswordRequest) -> dict:
+async def reset_password(
+    db: AsyncSession, body: ResetPasswordRequest, background_tasks: BackgroundTasks
+) -> dict:
     uid = _parse_user_id(verify_password_reset_token(body.token))
 
     result = await db.execute(select(User).where(User.id == uid))
@@ -296,4 +304,10 @@ async def reset_password(db: AsyncSession, body: ResetPasswordRequest) -> dict:
 
     user.password_hash = hash_password(body.new_password)
     await db.commit()
+
+    # Queued only after the commit: the notice must never describe a change
+    # that didn't land. It's what makes an unauthorised reset visible to the
+    # real owner while they can still act on it.
+    background_tasks.add_task(send_password_changed_notice, to_email=user.email)
+
     return {"status": "success", "message": "Password reset successfully"}
