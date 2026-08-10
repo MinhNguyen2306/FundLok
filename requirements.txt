@@ -1,35 +1,114 @@
-# Core FastAPI + server
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+# FundLok backend dependencies — FULLY PINNED.
+#
+# Why every version is exact: CI (.github/workflows/ci.yml) and the Cloud Run
+# buildpack both install from this file, and both resolve fresh. While these were
+# ranges (>=), an upstream release could — and on 2026-08-09 did — turn both CI jobs
+# red with no change to a single line of our code. Alembic 1.19.0 began comparing
+# CHECK constraints in autogenerate; our constraints live in raw DDL inside the
+# migrations and are not declared on the ORM models, so `alembic check` reported all
+# 28 of them as removed. That failed the migration-check job directly and the test
+# job via tests/ledger/test_migration.py, which shells out to `alembic check`.
+#
+# HOW TO UPGRADE — never edit a version by hand:
+#   python3.11 -m venv /tmp/v && /tmp/v/bin/pip install -U pip
+#   /tmp/v/bin/pip install <package>==<new version> -r requirements.txt
+#   (run the suite against it, then) /tmp/v/bin/pip freeze > requirements.txt
+# Then restore this header and the section comments. Verified green on
+# Python 3.11 with PostgreSQL 16: alembic upgrade head, alembic check,
+# and pytest -q at 175 passed / 0 failed.
+#
+# CAPPED ON PURPOSE — read before bumping:
+#   alembic  held at 1.18.5. 1.19.0+ fails `alembic check` for the reason above.
+#            Lifting the cap needs one of: the 28 CHECK constraints declared on the
+#            models, or an include_object filter in alembic/env.py that skips
+#            check constraints. Do that first, then bump.
+
+# ── Core FastAPI + server ────────────────────────────────────────────────────
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
 
 # Database (SQLAlchemy 2.x async for the app; psycopg2 stays for Alembic --
 # see app/core/database.py and alembic/env.py, HANDOFF-02 Fix A)
-sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.29.0
-psycopg2-binary>=2.9.9
+SQLAlchemy[asyncio]==2.0.51
+asyncpg==0.31.0
+psycopg2-binary==2.9.12
 
-# Environment & config
-python-dotenv>=1.0.0
-pydantic-settings>=2.0.0
+# ── Environment & config ─────────────────────────────────────────────────────
+python-dotenv==1.2.2
+pydantic-settings==2.15.0
+pydantic[email]==2.13.4
 
-# Security (password hashing + JWT)
-passlib[bcrypt]>=1.7.4
-python-jose[cryptography]>=3.3.0
+# ── Security (password hashing + JWT) ────────────────────────────────────────
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.5.0
+argon2-cffi==25.1.0   # the active scheme; see app/utils/password.py (bcrypt 72-byte limit)
 
-# Optional but very useful for dev
-alembic>=1.13.0          # migrations (we'll set up soon)
-httpx>=0.27.0            # for testing API calls
-pytest>=8.0.0            # for tests (add later)
-pytest-asyncio>=0.23.0   # async test functions + fixtures (HANDOFF-02)
+# ── Migrations, mail, storage ────────────────────────────────────────────────
+alembic==1.18.5          # CAPPED — see the header before bumping
+fastapi-mail==1.6.5
+email-validator==2.3.0
+google-cloud-storage==3.13.1
+boto3==1.43.67           # Cloudflare R2 (S3-compatible) presigned uploads
+PyYAML==6.0.3          # grading engine params loader (app/underwriting/grading/params.py)
 
-email-validator>=2.0.0.post1   # for email validation in Pydantic
-argon2-cffi   #I added this due to the 72 bcrypt error
+# ── Test tooling ─────────────────────────────────────────────────────────────
+httpx==0.28.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
 
-fastapi-mail>=1.4.1
-pydantic[email]
-
-google-cloud-storage
-
-boto3>=1.34.0   # Cloudflare R2 (S3-compatible) presigned uploads
-
-pyyaml>=6.0     # grading engine params loader (app/underwriting/grading/params.py)
+# ── Transitive dependencies, pinned for reproducibility ──────────────────────
+# Resolved by pip from the direct requirements above. Do not hand-edit; regenerate
+# with the freeze recipe in the header.
+aiosmtplib==5.1.2
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+argon2-cffi-bindings==25.1.0
+bcrypt==5.0.0
+blinker==1.9.0
+botocore==1.43.67
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.4.9
+click==8.4.2
+cryptography==49.0.0
+dnspython==2.8.0
+ecdsa==0.19.2
+google-api-core==2.34.0
+google-auth==2.56.3
+google-cloud-core==2.6.1
+google-crc32c==1.8.0
+google-resumable-media==2.10.1
+googleapis-common-protos==1.75.1
+greenlet==3.5.4
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.8.0
+idna==3.18
+iniconfig==2.3.0
+Jinja2==3.1.6
+jmespath==1.1.0
+Mako==1.4.1
+MarkupSafe==3.0.3
+packaging==26.3
+pluggy==1.6.0
+proto-plus==1.28.3
+protobuf==7.35.1
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydantic_core==2.46.4
+Pygments==2.20.0
+python-dateutil==2.9.0.post0
+regex==2026.7.19
+requests==2.34.2
+rsa==4.9.1
+s3transfer==0.19.2
+six==1.17.0
+starlette==1.6.0
+typing-inspection==0.4.2
+typing_extensions==4.16.0
+urllib3==2.7.0
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.0.1
