@@ -199,6 +199,20 @@ def _mock_external_io(monkeypatch):
     monkeypatch.setattr("app.auth.service.send_verification_email", lambda *a, **kw: None)
     monkeypatch.setattr("app.auth.service.send_password_reset_email", lambda *a, **kw: None)
     monkeypatch.setattr("app.auth.service.send_existing_account_notice", lambda *a, **kw: None)
+    # Imported into two modules, so it needs stubbing at both call sites. A
+    # test that asserts on the notice re-patches the same target itself; this
+    # autouse fixture runs first, so the test's own monkeypatch still wins.
+    monkeypatch.setattr("app.auth.service.send_password_changed_notice", lambda *a, **kw: None)
+    monkeypatch.setattr("app.users.service.send_password_changed_notice", lambda *a, **kw: None)
+
+    # Backstop under all of the above. Patching senders one call site at a
+    # time is a list that silently goes stale -- send_password_changed_notice
+    # was added to two modules and to neither list, and the gap only surfaced
+    # in CI, because a developer machine has mailpit on :1025 (ADR-005) and
+    # quietly accepts the mail. Every sender in app/utils/email.py bottoms out
+    # here, so a new one can no longer reach the network just by being
+    # forgotten.
+    monkeypatch.setattr("app.utils.email.send_email", lambda *a, **kw: None)
 
     # GVerify verification-document retention writes to R2 — never in tests.
     async def _no_store(*a, **kw):
