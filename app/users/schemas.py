@@ -68,6 +68,28 @@ class AvatarConfirmRequest(BaseModel):
     file_key: str
 
 
+class SetPasswordRequest(BaseModel):
+    """Set a FIRST password from the profile page.
+
+    Deliberately has no `current_password`: this endpoint only ever serves an
+    account that has no password yet, so there is nothing to prove. *Changing*
+    an existing password goes through forgot-password / reset-password instead,
+    where the emailed token is the proof — which is why a session alone can
+    never overwrite a password that already exists.
+    """
+
+    new_password: str = Field(..., min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        # Same 72-byte ceiling as ResetPasswordRequest — passlib silently
+        # truncates beyond it, which would make two different passwords match.
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password too long")
+        return v
+
+
 class UserUpdateRequest(BaseModel):
     """Self-service profile update. Only fields included in the request body are
     changed (PATCH semantics). email / role / status / password are intentionally

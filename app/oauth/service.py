@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from secrets import token_urlsafe
 
 import httpx
 from fastapi import HTTPException, status
@@ -96,7 +95,17 @@ class OAuthProviderBase(ABC):
             email=user_info.email,
             phone=None,
             full_name=user_info.full_name,
-            password_hash=token_urlsafe(32),
+            # No password: this account signs in through the provider. The
+            # column is nullable (migration d5a8c31f6b02) precisely so this
+            # state is representable.
+            #
+            # It used to hold token_urlsafe(32) -- a random string, not a hash.
+            # passlib can't identify that format, so verify_password() raised
+            # UnknownHashError instead of returning False: any password-login
+            # attempt on an OAuth account was a 500, not a 401. It also made
+            # has_password report True, hiding the "Set password" flow from the
+            # only users who need it.
+            password_hash=None,
             role=None,  # chosen later via /select-role, same as email/password signup
             status="ACTIVE",
             email_verified=True,

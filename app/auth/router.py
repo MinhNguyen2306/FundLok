@@ -88,5 +88,9 @@ async def forgot_password(body: ForgotPasswordRequest, background_tasks: Backgro
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
-    return await service.reset_password(db, body)
+async def reset_password(
+    body: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    return await service.reset_password(db, body, background_tasks)
