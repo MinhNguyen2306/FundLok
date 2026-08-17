@@ -47,7 +47,7 @@ class OAuthProviderBase(ABC):
             claims = jwt.decode(
                 id_token,
                 key,
-                algorithms=[header.get("alg", "RS256")],
+                algorithms=self._signing_algorithms(discovery, key),
                 audience=self.client_id,
                 options={"verify_iss": False},
             )
@@ -119,6 +119,26 @@ class OAuthProviderBase(ABC):
             response = client.get(url)
             response.raise_for_status()
             return response.json()
+
+    def _signing_algorithms(self, discovery: dict, key: dict) -> list[str]:
+        """Algorithms we accept for an ID token -- never read from the token itself.
+
+        The JWT header is supplied by whoever is logging in, so taking `alg` from
+        it lets the caller choose how their own token gets verified. The key here
+        is a *public* JWK, which makes an HMAC alg the dangerous case: it would
+        hand the caller a verification "secret" they already know.
+
+        Trust the provider instead, in descending order of specificity: the alg
+        published on the JWK itself, then the discovery document, then RS256 --
+        the only value Google, Apple and Microsoft advertise. The RS/ES/PS filter
+        keeps a permissive discovery document from reopening the same hole.
+        """
+        if key.get("alg"):
+            candidates = [key["alg"]]
+        else:
+            candidates = list(discovery.get("id_token_signing_alg_values_supported") or [])
+
+        return [alg for alg in candidates if alg[:2] in ("RS", "ES", "PS")] or ["RS256"]
 
     def _find_key(self, keys: list[dict], kid: str | None) -> dict:
         if not kid:

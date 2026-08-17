@@ -2,11 +2,12 @@
 # the console-created Cloud Build trigger has been deleted, see
 # docs/deployment/ci-cd-pipeline.md).
 #
-#   PR to preview / main  -> migration check + tests
+#   PR to preview / main  -> migration check + tests + dependency audit
 #   push to preview       -> migration check + tests -> deploy "staging"
 #   push to main          -> migration check + tests -> deploy "prod-api"
 #
-# Deploy jobs are gated with `needs:` — a failing test suite never ships.
+# Deploy jobs are gated with `needs:` — a failing test suite never ships. The
+# dependency audit is intentionally outside that gate; see the job for why.
 # Google Cloud auth is keyless via Workload Identity Federation.
 #
 # Required GitHub repository secrets:
@@ -129,6 +130,46 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5432/test_db
         run: pytest -q
+
+  dependency-audit:
+    name: Audit Dependencies
+    runs-on: ubuntu-latest
+
+    # Deliberately NOT in the deploy jobs' `needs:`. A new advisory published
+    # against a pin we never touched would otherwise block shipping a hotfix --
+    # the same "upstream turns CI red with no change to our code" failure that
+    # made requirements.txt fully pinned in the first place. This job goes red
+    # on the PR so the finding is visible; it does not gate the deploy.
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # pipx keeps pip-audit's own dependencies out of the audited set, and
+      # --no-deps is safe precisely because requirements.txt pins every
+      # transitive too -- there is nothing left for it to resolve.
+      #
+      # The suppressions below are the two findings we have accepted. Both are
+      # unreachable from our code; re-check them before adding a third.
+      #   ecdsa 0.19.2  CVE-2024-23342, Minerva timing attack on P-256. No fix
+      #                 exists: upstream considers side-channel resistance out
+      #                 of scope. It ships as a hard dependency of python-jose
+      #                 but never runs -- our own tokens are HS256 and provider
+      #                 ID tokens verify as RS256.
+      #   cryptography  CVE-2026-69247, PKCS#7 EnvelopedData. Held at 49.0.0 by
+      #                 fastapi-mail; see the requirements.txt header. Drop this
+      #                 pair when that cap lifts and the bump lands.
+      - name: Audit pinned dependencies for known vulnerabilities
+        run: |
+          pipx run pip-audit==2.10.1 \
+            --requirement requirements.txt --no-deps --strict \
+            --ignore-vuln GHSA-wj6h-64fc-37mp --ignore-vuln PYSEC-2026-1325 \
+            --ignore-vuln GHSA-g6cj-pr64-35w5 --ignore-vuln PYSEC-2026-3552
 
   deploy-staging:
     name: Deploy to Cloud Run (staging)
