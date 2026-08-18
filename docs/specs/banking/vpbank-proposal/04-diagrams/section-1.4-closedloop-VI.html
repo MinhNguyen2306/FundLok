@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="vi" data-palette="#2a78d6,#eb6834,#1baf7a,#4a3aa7">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mục 1.4 — vòng kín và cơ chế kiểm soát phí của FundLok</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --band:#fcfcfb; --bandalt:#f6f6f3; --cellbg:#ffffff; --esbg:#f1f0ec; --headband:#f2f2ee;
+    --panel:#f6f6f3; --card:#ffffff;
+    --pr:#2a78d6; --fe:#eb6834; --rp:#1baf7a; --wd:#4a3aa7;
+    --p1:#2a78d6; --p2:#eb6834; --p3:#1baf7a; --p4:#4a3aa7;
+    --ins:#7d7b74;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#4a4945; --border:rgba(255,255,255,0.10);
+      --band:#1a1a19; --bandalt:#201f1e; --cellbg:#242422; --esbg:#2b2a27; --headband:#232322;
+      --panel:#201f1e; --card:#242422;
+      --pr:#3987e5; --fe:#d95926; --rp:#199e70; --wd:#9085e9;
+      --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+      --ins:#98968f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#4a4945; --border:rgba(255,255,255,0.10);
+    --band:#1a1a19; --bandalt:#201f1e; --cellbg:#242422; --esbg:#2b2a27; --headband:#232322;
+    --panel:#201f1e; --card:#242422;
+    --pr:#3987e5; --fe:#d95926; --rp:#199e70; --wd:#9085e9;
+    --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+    --ins:#98968f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 22px 48px;background:var(--plane);color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.55}
+  header,figure,details{max-width:1260px;margin-left:auto;margin-right:auto}
+  h1{font-size:21px;margin:0 0 6px;letter-spacing:-0.01em}
+  .sub{color:var(--ink-2);margin:0 0 4px} .meta{color:var(--muted);font-size:12.5px;margin:0}
+  .toolbar{max-width:1260px;margin:16px auto 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1px solid var(--border);
+          background:var(--surface-1);color:var(--ink-2);cursor:pointer}
+  .legend{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);align-items:center}
+  .legend .sw{display:inline-block;width:20px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}
+  .sw-pr{background:var(--pr)} .sw-fe{background:var(--fe)} .sw-rp{background:var(--rp)}
+  .sw-wd{background:var(--wd)} .sw-ins{background:var(--ins)}
+  .scroller{overflow-x:auto;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:6px}
+  svg{display:block;width:100%;height:auto}
+  .band{fill:var(--band)} .bandalt{fill:var(--bandalt)} .headband{fill:var(--headband)}
+  .rowsep,.colsep{stroke:var(--grid);stroke-width:1}
+  .nodebox{fill:var(--cellbg);stroke:var(--border);stroke-width:1}
+  .nodebox-es{fill:var(--esbg);stroke:var(--border);stroke-width:1.4}
+  .nodedash{fill:none;stroke:var(--axis);stroke-width:1;stroke-dasharray:3 3}
+  .instrbox{fill:var(--cellbg);stroke:var(--ink-2);stroke-width:1.3}
+  .instrline{stroke:none;opacity:0.11}
+  .l-pr{fill:var(--pr)} .l-fe{fill:var(--fe)}
+  .instrtitle{font-size:11px;font-weight:660;fill:var(--ink)}
+  .instrtag{font-size:8.6px;fill:var(--muted)}
+  .instrtx{font-size:9.4px;font-weight:600}
+  .nodelabel{font-size:10.8px;font-weight:640;fill:var(--ink)}
+  .nodesub{font-size:9.2px;fill:var(--muted)}
+  .edge{fill:none;stroke-width:1.8} .edge.dashed{stroke-width:1.4;stroke-dasharray:4 3}
+  .e-pr{stroke:var(--pr)} .e-fe{stroke:var(--fe)} .e-rp{stroke:var(--rp)}
+  .e-wd{stroke:var(--wd)} .e-ins{stroke:var(--ins)}
+  .edgelabel{font-size:9.4px;font-weight:640;fill:var(--ink-2)}
+  .t-pr{fill:var(--pr)} .t-fe{fill:var(--fe)} .t-rp{fill:var(--rp)} .t-wd{fill:var(--wd)}
+  .f-pr{fill:var(--pr)} .f-fe{fill:var(--fe)} .f-rp{fill:var(--rp)} .f-wd{fill:var(--wd)}
+  .f-es{fill:var(--muted)} .f-ins{fill:var(--ins)} .f-p4{fill:var(--p4)}
+  .p1-fill{fill:var(--p1)} .p2-fill{fill:var(--p2)} .p3-fill{fill:var(--p3)} .p4-fill{fill:var(--p4)}
+  .plate{stroke:none}
+  .t1{font-size:11px;fill:var(--ink-2)}
+  .closed{font-size:12px;font-weight:680;fill:var(--rp)}
+  .lanename{font-size:12.5px;font-weight:660;fill:var(--ink)}
+  .lanerole{font-size:9.2px;fill:var(--muted)}
+  .stnum{font-size:9.6px;font-weight:700;fill:var(--surface-1)} .stnum-bg{fill:var(--ink)}
+  .stname{font-size:11.4px;font-weight:660;fill:var(--ink)}
+  .stfreq{font-size:9px;fill:var(--muted)}
+  .feetagtx{font-size:8.8px;font-weight:680;fill:var(--fe)}
+  .feebar{opacity:0.85}
+  .gatebox{fill:var(--card);stroke:var(--p4);stroke-width:1.2}
+  .gatetx{font-size:8.8px;font-weight:700;fill:var(--p4)}
+  .instrarr{font-size:8.8px;fill:var(--ins)}
+  .panel{fill:var(--panel);stroke:var(--border);stroke-width:1}
+  .ptitle{font-size:12.4px;font-weight:680;fill:var(--ink)}
+  .psub{font-size:9.6px;fill:var(--ink-2)}
+  .gatecard{fill:var(--card);stroke:var(--border);stroke-width:1}
+  .passcard{fill:var(--card);stroke:var(--rp);stroke-width:1.3}
+  .gnum{font-size:9px;font-weight:700;fill:var(--card)} .gnum-bg{fill:var(--p4)}
+  .gname{font-size:11px;font-weight:680;fill:var(--ink)}
+  .passname{font-size:11px;font-weight:700;fill:var(--rp)}
+  .gq{font-size:9.4px;fill:var(--ink-2)}
+  .gf{font-size:8.8px;fill:var(--muted);font-style:italic}
+  .chev{fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .failbar{fill:none;stroke:var(--ink-2);stroke-width:1.2;stroke-dasharray:5 3}
+  .failname{font-size:10.4px;font-weight:700;fill:var(--ink)}
+  .faildesc{font-size:9.4px;fill:var(--ink-2)}
+  .note{font-size:9.6px;fill:var(--ink-2)}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:11px}
+  figcaption p{margin:0 0 5px}
+  figure.second{margin-top:24px}
+  summary{cursor:pointer;font-size:13px;color:var(--ink-2)} details{margin-top:24px}
+  table{border-collapse:collapse;width:100%;margin:12px 0 20px;font-size:12.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{color:var(--muted);font-weight:620;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}
+  h3{font-size:12.5px;margin:18px 0 0;color:var(--ink-2)}
+  .tref{font-weight:700;color:var(--ink-2);white-space:nowrap}
+  @media print{
+    @page { size: A4 landscape; margin: 9mm 11mm; }
+    body{padding:0;background:#fff} .toolbar{display:none}
+    .scroller{overflow:visible;border:none;padding:0;background:none}
+    header{margin-bottom:5px} h1{font-size:12.5pt} .sub{font-size:8.4pt;margin-bottom:2px}
+    .meta{font-size:7.6pt}
+    figure{max-width:none;text-align:center;margin:0;break-inside:avoid}
+    figure.second{break-before:page;margin-top:0}
+    svg{width:238mm!important;height:auto!important;margin:0 auto}
+    figure.second svg{width:246mm!important}
+    figcaption{font-size:7.4pt;text-align:left;margin-top:4px}
+    details{break-before:avoid;margin-top:8px;max-width:none}
+    summary{font-size:8.4pt;font-weight:700;list-style:none}
+    h3{font-size:8pt;margin:10px 0 0}
+    table{font-size:7pt;margin:4px 0 8px}
+    th,td{padding:2.5px 6px}
+    tr{break-inside:avoid}
+  }
+</style></head>
+<body>
+<header>
+  <h1>Mục 1.4 — vòng kín và cơ chế kiểm soát phí của FundLok</h1>
+  <p class="sub">Tiền không rời khỏi phạm vi tài khoản ký quỹ, trừ khi chuyển đến một tài khoản đã được đăng ký trong danh sách tài khoản đích được phép. Phí của FundLok là một dòng nằm bên trong lệnh thanh toán cho người thụ hưởng, không phải một lệnh riêng.</p>
+  <p class="meta">Trường hợp minh hoạ: khoản vay VND 2.5 tỷ, tám nhà đầu tư tham gia, phí giải ngân 1%. Ước lượng nội bộ của FundLok ngày 5 August 2026.</p>
+</header>
+<div class="toolbar">
+  <button id="themeBtn" type="button">Chuyển chế độ tối</button>
+  <div class="legend"><span><span class="sw sw-pr"></span>Vốn gốc</span>
+<span><span class="sw sw-fe"></span>Phí FundLok — bên trong lệnh chi trả người thụ hưởng</span>
+<span><span class="sw sw-rp"></span>Trả nợ &amp; phân bổ</span>
+<span><span class="sw sw-wd"></span>Rút tiền &amp; tái đầu tư</span>
+<span><span class="sw sw-ins"></span>Lệnh thanh toán — dữ liệu, không phải tiền</span></div>
+</div>
+<figure>
+  <div class="scroller">
+    <svg viewBox="0 0 1204 788" role="img" aria-label="Mục 1.4 — vòng kín và cơ chế kiểm soát phí của FundLok">
+      <defs>
+        <marker id="a-pr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--pr)"/></marker>
+        <marker id="a-fe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--fe)"/></marker>
+        <marker id="a-rp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--rp)"/></marker>
+        <marker id="a-wd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--wd)"/></marker>
+        <marker id="a-ins" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="var(--ins)"/></marker>
+      </defs>
+<text class="t1" x="16" y="22">Mọi lượt chuyển tiền dưới đây do VPBank thực hiện trên cơ sở lệnh thanh toán có phê duyệt kép của FundLok. FundLok không giữ tiền và không có</text>
+<text class="t1" x="16" y="40">quyền rút tiền đối với tài khoản ký quỹ. Phí của FundLok không bao giờ đi một mình — phí nằm bên trong lệnh thanh toán chi trả cho người</text>
+<text class="t1" x="16" y="58">thụ hưởng trong cùng một lượt chuyển tiền, theo tỷ lệ mà VPBank có thể kiểm tra ngay trên mặt lệnh.</text>
+<text class="closed" x="16" y="80">Vòng kín: khoản mà nhà đầu tư nhận được chỉ có thể chi trả về đúng tài khoản ngân hàng mà nhà đầu tư đó đã chuyển tiền đi.</text>
+<rect class="band" x="0" y="196" width="1188" height="120"/>
+<rect class="laneedge p1-fill" x="0" y="196" width="4" height="120"/>
+<text class="lanename" x="14" y="222">Nhà đầu tư</text>
+<text class="lanerole" x="14" y="240">bên cho vay chính</text>
+<text class="lanerole" x="14" y="252">thức</text>
+<rect class="bandalt" x="0" y="316" width="1188" height="104"/>
+<rect class="laneedge p2-fill" x="0" y="316" width="4" height="104"/>
+<text class="lanename" x="14" y="342">SME</text>
+<text class="lanerole" x="14" y="360">bên đi vay</text>
+<rect class="band" x="0" y="420" width="1188" height="108"/>
+<rect class="laneedge p4-fill" x="0" y="420" width="4" height="108"/>
+<text class="lanename" x="14" y="446">VPBank</text>
+<text class="lanerole" x="14" y="464">đơn vị lưu ký — giữ</text>
+<text class="lanerole" x="14" y="476">và chuyển tiền</text>
+<rect class="bandalt" x="0" y="528" width="1188" height="250"/>
+<rect class="laneedge p3-fill" x="0" y="528" width="4" height="250"/>
+<text class="lanename" x="14" y="554">FundLok</text>
+<text class="lanerole" x="14" y="572">bên thu xếp &amp; vận</text>
+<text class="lanerole" x="14" y="584">hành — phát hành</text>
+<text class="lanerole" x="14" y="596">lệnh, không giữ tiền</text>
+<text class="lanerole" x="14" y="608">ký quỹ</text>
+<rect class="headband" x="0" y="94" width="1188" height="70"/>
+<circle class="stnum-bg" cx="193" cy="113" r="10"/>
+<text class="stnum" x="193" y="117" text-anchor="middle">1</text>
+<text class="stname" x="209" y="117">Cấp vốn</text>
+<text class="stfreq" x="183" y="145">một lần, khi mỗi nhà đầu tư cam kết</text>
+<circle class="stnum-bg" cx="399" cy="113" r="10"/>
+<text class="stnum" x="399" y="117" text-anchor="middle">2</text>
+<text class="stname" x="415" y="117">Giải ngân</text>
+<text class="stfreq" x="389" y="145">một lần, khi đủ số vốn mục tiêu</text>
+<rect class="feebar f-fe" x="365" y="95" width="204" height="3"/>
+<text class="feetagtx" x="389" y="158">có dòng phí</text>
+<circle class="stnum-bg" cx="605" cy="113" r="10"/>
+<text class="stnum" x="605" y="117" text-anchor="middle">3</text>
+<text class="stname" x="621" y="117">Thu nợ hằng ngày</text>
+<text class="stfreq" x="595" y="145">mỗi ngày làm việc</text>
+<circle class="stnum-bg" cx="811" cy="113" r="10"/>
+<text class="stnum" x="811" y="117" text-anchor="middle">4</text>
+<text class="stname" x="827" y="117">Phân bổ hằng ngày</text>
+<text class="stfreq" x="801" y="145">mỗi ngày làm việc</text>
+<rect class="feebar f-fe" x="777" y="95" width="204" height="3"/>
+<text class="feetagtx" x="801" y="158">có dòng phí</text>
+<circle class="stnum-bg" cx="1017" cy="113" r="10"/>
+<text class="stnum" x="1017" y="117" text-anchor="middle">5</text>
+<text class="stname" x="1033" y="117">Rút tiền hoặc tái</text>
+<text class="stname" x="1007" y="130">đầu tư</text>
+<text class="stfreq" x="1007" y="145">theo yêu cầu của nhà đầu tư</text>
+<line class="colsep" x1="158" y1="94" x2="158" y2="778"/>
+<line class="colsep" x1="364" y1="94" x2="364" y2="778"/>
+<line class="colsep" x1="570" y1="94" x2="570" y2="778"/>
+<line class="colsep" x1="776" y1="94" x2="776" y2="778"/>
+<line class="colsep" x1="982" y1="94" x2="982" y2="778"/>
+<line class="colsep" x1="1188" y1="94" x2="1188" y2="778"/>
+<line class="rowsep" x1="0" y1="196" x2="1188" y2="196"/>
+<line class="rowsep" x1="0" y1="316" x2="1188" y2="316"/>
+<line class="rowsep" x1="0" y1="420" x2="1188" y2="420"/>
+<line class="rowsep" x1="0" y1="528" x2="1188" y2="528"/>
+<line class="rowsep" x1="0" y1="778" x2="1188" y2="778"/>
+<rect class="nodebox" x="183" y="214" width="156" height="74" rx="6"/>
+<rect class="nodeedge f-pr" x="183" y="214" width="3.5" height="74" rx="1.75"/>
+<text class="nodelabel" x="195" y="231">
+<tspan x="195" dy="0">Tài khoản ngân hàng</tspan>
+<tspan x="195" dy="12">của nhà đầu tư</tspan>
+</text>
+<text class="nodesub" x="195" y="258">
+<tspan x="195" dy="0">được ghi nhận tại M1 —</tspan>
+<tspan x="195" dy="10.5">sau đó là tài khoản đích</tspan>
+<tspan x="195" dy="10.5">bên ngoài duy nhất</tspan>
+</text>
+<rect class="nodedash" x="801" y="214" width="156" height="74" rx="6"/>
+<text class="nodelabel" x="813" y="231">
+<tspan x="813" dy="0">Số dư khả dụng trong</tspan>
+<tspan x="813" dy="12">ngày</tspan>
+</text>
+<text class="nodesub" x="813" y="258">
+<tspan x="813" dy="0">hiển thị trên nền tảng;</tspan>
+<tspan x="813" dy="10.5">chỉ chuyển đi khi có yêu</tspan>
+<tspan x="813" dy="10.5">cầu</tspan>
+</text>
+<rect class="nodedash" x="988" y="214" width="140" height="74" rx="6"/>
+<text class="nodelabel" x="1000" y="231">
+<tspan x="1000" dy="0">Yêu cầu rút tiền</tspan>
+</text>
+<text class="nodesub" x="1000" y="246">
+<tspan x="1000" dy="0">số tiền là của họ; tài</tspan>
+<tspan x="1000" dy="10.5">khoản đích không thể</tspan>
+<tspan x="1000" dy="10.5">tự chọn</tspan>
+</text>
+<rect class="nodebox" x="389" y="340" width="156" height="58" rx="6"/>
+<rect class="nodeedge f-pr" x="389" y="340" width="3.5" height="58" rx="1.75"/>
+<text class="nodelabel" x="401" y="357">
+<tspan x="401" dy="0">Tài khoản đã xác thực</tspan>
+<tspan x="401" dy="12">của SME</tspan>
+</text>
+<text class="nodesub" x="401" y="384">
+<tspan x="401" dy="0">nhận vốn gốc sau khi trừ</tspan>
+<tspan x="401" dy="10.5">phí 1%</tspan>
+</text>
+<rect class="nodebox" x="595" y="340" width="156" height="58" rx="6"/>
+<rect class="nodeedge f-rp" x="595" y="340" width="3.5" height="58" rx="1.75"/>
+<text class="nodelabel" x="607" y="357">
+<tspan x="607" dy="0">Chia sẻ doanh thu hằng</tspan>
+<tspan x="607" dy="12">ngày</tspan>
+</text>
+<text class="nodesub" x="607" y="384">
+<tspan x="607" dy="0">một % doanh thu ngày</tspan>
+<tspan x="607" dy="10.5">trước, tính từ T-VAN</tspan>
+</text>
+<rect class="nodebox-es" x="183" y="444" width="774" height="60" rx="6"/>
+<rect class="nodeedge f-es" x="183" y="444" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="195" y="464">
+<tspan x="195" dy="0">Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</tspan>
+</text>
+<text class="nodesub" x="195" y="479">
+<tspan x="195" dy="0">toàn bộ vốn gốc và các khoản thu nằm tại đây · FundLok không có quyền rút tiền</tspan>
+</text>
+<rect class="nodebox-es" x="1007" y="444" width="156" height="68" rx="6"/>
+<rect class="nodeedge f-es" x="1007" y="444" width="3.5" height="68" rx="1.75"/>
+<text class="nodelabel" x="1019" y="461">
+<tspan x="1019" dy="0">Số dư nắm giữ của nhà</tspan>
+<tspan x="1019" dy="12">đầu tư tại VPBank</tspan>
+</text>
+<text class="nodesub" x="1019" y="488">
+<tspan x="1019" dy="0">mỗi nhà đầu tư một tài</tspan>
+<tspan x="1019" dy="10.5">khoản ký quỹ (Phương án</tspan>
+<tspan x="1019" dy="10.5">B)</tspan>
+</text>
+<rect class="nodebox" x="183" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="183" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="195" y="605">
+<tspan x="195" dy="0">Đối chiếu và ghi nhận</tspan>
+</text>
+<text class="nodesub" x="195" y="620">
+<tspan x="195" dy="0">ghi nhận tài khoản chuyển</tspan>
+<tspan x="195" dy="10.5">tiền nguồn — không chạm</tspan>
+<tspan x="195" dy="10.5">vào tiền</tspan>
+</text>
+<rect class="nodebox" x="595" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="595" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="607" y="608">
+<tspan x="607" dy="0">Tính toán và yêu cầu</tspan>
+</text>
+<text class="nodesub" x="607" y="623">
+<tspan x="607" dy="0">đọc T-VAN; phát hành yêu</tspan>
+<tspan x="607" dy="10.5">cầu thanh toán</tspan>
+</text>
+<rect class="nodebox" x="1007" y="588" width="156" height="60" rx="6"/>
+<rect class="nodeedge f-ins" x="1007" y="588" width="3.5" height="60" rx="1.75"/>
+<text class="nodelabel" x="1019" y="605">
+<tspan x="1019" dy="0">Chỉ chuyển tiếp</tspan>
+</text>
+<text class="nodesub" x="1019" y="620">
+<tspan x="1019" dy="0">không thể thay đổi, thêm</tspan>
+<tspan x="1019" dy="10.5">hoặc thay thế tài khoản</tspan>
+<tspan x="1019" dy="10.5">đích</tspan>
+</text>
+<rect class="nodebox" x="366" y="710" width="591" height="54" rx="6"/>
+<rect class="nodeedge f-fe" x="366" y="710" width="3.5" height="54" rx="1.75"/>
+<text class="nodelabel" x="378" y="730">
+<tspan x="378" dy="0">Tài khoản phí của FundLok — ngoài phạm vi ký quỹ</tspan>
+</text>
+<text class="nodesub" x="378" y="745">
+<tspan x="378" dy="0">chỉ được ghi có dưới dạng một dòng bên trong lệnh thanh toán chi trả cho người thụ hưởng trong cùng lượt</tspan>
+<tspan x="378" dy="10.5">chuyển tiền</tspan>
+</text>
+<rect class="instrbox" x="389" y="562" width="156" height="136" rx="6"/>
+<rect class="nodeedge f-ins" x="389" y="562" width="3.5" height="136" rx="1.75"/>
+<text class="instrtitle" x="401" y="578">Lệnh giải ngân</text>
+<text class="instrtag" x="401" y="591">phê duyệt kép · một lệnh,</text>
+<text class="instrtag" x="401" y="601">hai dòng</text>
+<rect class="instrline l-pr" x="398" y="608" width="138" height="25" rx="3"/>
+<text class="instrtx t-pr" x="403" y="616">1 · chi trả SME — vốn gốc</text>
+<text class="instrtx t-pr" x="403" y="627">trước phí trừ 1%</text>
+<rect class="instrline l-fe" x="398" y="639" width="138" height="25" rx="3"/>
+<text class="instrtx t-fe" x="403" y="647">2 · chi trả FundLok — 1%</text>
+<text class="instrtx t-fe" x="403" y="658">của vốn gốc trước phí</text>
+<rect class="instrbox" x="801" y="562" width="156" height="136" rx="6"/>
+<rect class="nodeedge f-ins" x="801" y="562" width="3.5" height="136" rx="1.75"/>
+<text class="instrtitle" x="813" y="578">Lệnh phân bổ</text>
+<text class="instrtag" x="813" y="591">phê duyệt kép · một lệnh,</text>
+<text class="instrtag" x="813" y="601">hai dòng</text>
+<rect class="instrline l-pr" x="810" y="608" width="138" height="25" rx="3"/>
+<text class="instrtx t-pr" x="815" y="616">1 · chi trả từng nhà đầu</text>
+<text class="instrtx t-pr" x="815" y="627">tư — phần theo tỷ lệ</text>
+<rect class="instrline l-fe" x="810" y="639" width="138" height="36" rx="3"/>
+<text class="instrtx t-fe" x="815" y="647">2 · chi trả FundLok — một</text>
+<text class="instrtx t-fe" x="815" y="658">% của chính khoản phân bổ</text>
+<text class="instrtx t-fe" x="815" y="669">đó</text>
+<path class="edge e-pr" d="M 243 288 V 436" marker-end="url(#a-pr)"/>
+<rect class="plate bandalt" x="208.0" y="322" width="70.0" height="13" rx="3"/>
+<text class="edgelabel t-pr" x="243" y="332" text-anchor="middle">M1 · vốn gốc</text>
+<path class="edge e-pr" d="M 449 444 V 406" marker-end="url(#a-pr)"/>
+<rect class="plate band" x="394.0" y="426" width="110.0" height="13" rx="3"/>
+<text class="edgelabel t-pr" x="449" y="436" text-anchor="middle">M2 · vốn gốc sau phí</text>
+<path class="edge e-rp" d="M 691 398 V 436" marker-end="url(#a-rp)"/>
+<rect class="plate band" x="606.0" y="426" width="170.0" height="13" rx="3"/>
+<text class="edgelabel t-rp" x="691" y="436" text-anchor="middle">M4 · chia sẻ doanh thu hằng ngày</text>
+<path class="edge e-rp" d="M 960 462 H 999" marker-end="url(#a-rp)"/>
+<path class="edge e-wd" d="M 1004 488 H 965" marker-end="url(#a-wd)"/>
+<rect class="plate band" x="895.0" y="426" width="70.0" height="13" rx="3"/>
+<text class="edgelabel t-rp" x="930" y="436" text-anchor="middle">M5 · phân bổ</text>
+<rect class="plate band" x="887.5" y="510" width="85.0" height="13" rx="3"/>
+<text class="edgelabel t-wd" x="930" y="520" text-anchor="middle">M8 · tái đầu tư</text>
+<path class="edge e-fe" d="M 375 504 V 702" marker-end="url(#a-fe)"/>
+<rect class="plate bandalt" x="375.0" y="534" width="100.0" height="13" rx="3"/>
+<text class="edgelabel t-fe" x="425" y="544" text-anchor="middle">M3 · phí giải ngân</text>
+<path class="edge e-fe" d="M 787 504 V 702" marker-end="url(#a-fe)"/>
+<rect class="plate bandalt" x="767.0" y="534" width="140.0" height="13" rx="3"/>
+<text class="edgelabel t-fe" x="837" y="544" text-anchor="middle">M6 · phí quản lý khoản vay</text>
+<path class="edge e-ins dashed" d="M 514 562 V 512" marker-end="url(#a-ins)"/>
+<rect class="gatebox" x="476.8" y="537" width="74.4" height="17" rx="8.5"/>
+<text class="gatetx" x="514" y="549" text-anchor="middle">kiểm soát</text>
+<path class="edge e-ins dashed" d="M 926 562 V 512" marker-end="url(#a-ins)"/>
+<rect class="gatebox" x="888.8" y="537" width="74.4" height="17" rx="8.5"/>
+<text class="gatetx" x="926" y="549" text-anchor="middle">kiểm soát</text>
+<path class="edge e-wd" d="M 1143 444 V 180 H 148 V 251.0 H 175" marker-end="url(#a-wd)"/>
+<rect class="plate band" x="332.5" y="164" width="500.0" height="13" rx="3"/>
+<text class="edgelabel t-wd" x="582.5" y="174" text-anchor="middle">M7 · rút tiền — về đúng tài khoản đã đăng ký, không tài khoản nào khác. Vòng kín đóng lại tại đây.</text>
+    </svg>
+  </div>
+  <figcaption>
+    <p>Màu sắc thể hiện loại lượt chuyển tiền. Hai đường màu cam, M3 và M6, là hai lượt chuyển tiền duy nhất đến FundLok, và mỗi lượt là một dòng nằm trong lệnh thanh toán chi trả cho người thụ hưởng trong cùng lượt chuyển tiền — không bao giờ là một lệnh riêng. FundLok không bao giờ là tài khoản đích được phép đối với vốn gốc.</p>
+  </figcaption>
+</figure>
+<figure class="second">
+  <div class="scroller">
+    <svg viewBox="0 0 1204 327" role="img" aria-label="Cơ chế kiểm soát, diễn giải chi tiết — kiểm soát của VPBank đối với mọi lệnh thanh toán có chứa dòng phí của FundLok (M3, M6)">
+<rect class="panel" x="12" y="8" width="1176" height="253" rx="10"/>
+<text class="ptitle" x="26" y="32">Cơ chế kiểm soát, diễn giải chi tiết — kiểm soát của VPBank đối với mọi lệnh thanh toán có chứa dòng phí của FundLok (M3, M6)</text>
+<text class="psub" x="26" y="49">Bốn bước kiểm tra, tất cả đều thực hiện ngay trên mặt lệnh. VPBank không cần biết thông tin khoản vay để áp dụng.</text>
+<rect class="gatecard" x="26" y="62" width="214" height="131" rx="7"/>
+<rect class="nodeedge f-p4" x="26" y="62" width="3.5" height="131" rx="1.75"/>
+<circle class="gnum-bg" cx="50" cy="82" r="9"/>
+<text class="gnum" x="50" y="85.5" text-anchor="middle">1</text>
+<text class="gname" x="65" y="86">Tài khoản đích</text>
+<text class="gq" x="39" y="105">
+<tspan x="39" dy="0">Mọi người thụ hưởng có nằm trong</tspan>
+<tspan x="39" dy="11">danh sách tài khoản đích được phép</tspan>
+<tspan x="39" dy="11">đã đăng ký không?</tspan>
+</text>
+<text class="gf" x="39" y="144">
+<tspan x="39" dy="0">Không đạt nếu có tài khoản ngoài</tspan>
+<tspan x="39" dy="10">danh sách — kể cả tài khoản của</tspan>
+<tspan x="39" dy="10">chính FundLok.</tspan>
+</text>
+<path class="chev" d="M 246.0 122.5 l 5 5 l -5 5"/>
+<rect class="gatecard" x="260" y="62" width="214" height="131" rx="7"/>
+<rect class="nodeedge f-p4" x="260" y="62" width="3.5" height="131" rx="1.75"/>
+<circle class="gnum-bg" cx="284" cy="82" r="9"/>
+<text class="gnum" x="284" y="85.5" text-anchor="middle">2</text>
+<text class="gname" x="299" y="86">Ghép cặp</text>
+<text class="gq" x="273" y="105">
+<tspan x="273" dy="0">Dòng phí có nằm trong một lệnh</tspan>
+<tspan x="273" dy="11">đồng thời chi trả cho người thụ</tspan>
+<tspan x="273" dy="11">hưởng không?</tspan>
+</text>
+<text class="gf" x="273" y="144">
+<tspan x="273" dy="0">Không đạt nếu dòng phí đứng một</tspan>
+<tspan x="273" dy="10">mình, hoặc rút từ số dư đang để</tspan>
+<tspan x="273" dy="10">không.</tspan>
+</text>
+<path class="chev" d="M 480.0 122.5 l 5 5 l -5 5"/>
+<rect class="gatecard" x="494" y="62" width="214" height="131" rx="7"/>
+<rect class="nodeedge f-p4" x="494" y="62" width="3.5" height="131" rx="1.75"/>
+<circle class="gnum-bg" cx="518" cy="82" r="9"/>
+<text class="gnum" x="518" y="85.5" text-anchor="middle">3</text>
+<text class="gname" x="533" y="86">Tỷ lệ và mức trần</text>
+<text class="gq" x="507" y="105">
+<tspan x="507" dy="0">Dòng phí có nằm trong tỷ lệ đã</tspan>
+<tspan x="507" dy="11">đăng ký của chính lệnh này, và</tspan>
+<tspan x="507" dy="11">trong mức trần đã đăng ký không?</tspan>
+</text>
+<text class="gf" x="507" y="144">
+<tspan x="507" dy="0">Là phép tính, không phải lời cam</tspan>
+<tspan x="507" dy="10">kết. Cả hai giá trị cần xác nhận với</tspan>
+<tspan x="507" dy="10">VPBank.</tspan>
+</text>
+<path class="chev" d="M 714.0 122.5 l 5 5 l -5 5"/>
+<rect class="gatecard" x="728" y="62" width="214" height="131" rx="7"/>
+<rect class="nodeedge f-p4" x="728" y="62" width="3.5" height="131" rx="1.75"/>
+<circle class="gnum-bg" cx="752" cy="82" r="9"/>
+<text class="gnum" x="752" y="85.5" text-anchor="middle">4</text>
+<text class="gname" x="767" y="86">Tạm giữ</text>
+<text class="gq" x="741" y="105">
+<tspan x="741" dy="0">Có tài khoản nào đang bị tạm giữ</tspan>
+<tspan x="741" dy="11">theo cơ chế xử lý tranh chấp</tspan>
+<tspan x="741" dy="11">không?</tspan>
+</text>
+<text class="gf" x="741" y="144">
+<tspan x="741" dy="0">Nếu bị tạm giữ, dòng phí bị tạm</tspan>
+<tspan x="741" dy="10">ngưng trong thời gian đó — dòng chi</tspan>
+<tspan x="741" dy="10">trả người thụ hưởng vẫn được thực</tspan>
+<tspan x="741" dy="10">hiện.</tspan>
+</text>
+<rect class="passcard" x="962" y="62" width="212" height="131" rx="7"/>
+<rect class="nodeedge f-rp" x="962" y="62" width="3.5" height="131" rx="1.75"/>
+<text class="passname" x="975" y="86">ĐẠT</text>
+<text class="gq" x="975" y="105">
+<tspan x="975" dy="0">VPBank thực hiện dòng chi trả</tspan>
+<tspan x="975" dy="11">người thụ hưởng và dòng phí</tspan>
+<tspan x="975" dy="11">trong cùng một lượt chuyển tiền.</tspan>
+<tspan x="975" dy="11">Không dòng nào được thực hiện</tspan>
+<tspan x="975" dy="11">nếu thiếu dòng kia.</tspan>
+</text>
+<rect class="failbar" x="26" y="207" width="1148" height="38" rx="7"/>
+<text class="failname" x="40" y="226">KHÔNG ĐẠT tại bất kỳ bước nào</text>
+<text class="faildesc" x="251.39999999999998" y="226">
+<tspan x="251.39999999999998" dy="0">Toàn bộ lệnh bị từ chối và chuyển về danh sách trường hợp ngoại lệ của FundLok. Không có phí nào được chuyển, không có số dư nào dịch chuyển, và</tspan>
+<tspan x="251.39999999999998" dy="12">FundLok không thể gửi lại lệnh với một tài khoản đích khác.</tspan>
+</text>
+<text class="note" x="16" y="287">Vì vậy, số tiền FundLok có thể lấy không phải là một chính sách do FundLok tự cam kết tuân thủ. Đó là phép tính VPBank kiểm tra trên từng lệnh, bị giới hạn hai lần —</text>
+<text class="note" x="16" y="302">theo tỷ lệ của chính lệnh đó, và theo mức trần đã đăng ký.</text>
+    </svg>
+  </div>
+  <figcaption>
+    <p>Mức phí và mức trần cần xác nhận với VPBank; cơ chế không phụ thuộc vào giá trị cụ thể. Mục 1.4.4 nêu đầy đủ bốn ràng buộc; Mục 1.4.3 nêu quy tắc vòng kín.</p>
+  </figcaption>
+</figure>
+<details open>
+  <summary>Nội dung dạng văn bản</summary>
+  <h3>Các lượt chuyển tiền</h3>
+  <table>
+    <thead><tr><th>Mã</th><th>Lượt chuyển tiền</th><th>Từ</th><th>Đến</th></tr></thead>
+    <tbody>
+<tr><td class="tref">M1</td><td>vốn gốc</td><td>Tài khoản ngân hàng của nhà đầu tư</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td></tr>
+<tr><td class="tref">M2</td><td>vốn gốc sau phí</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td><td>Tài khoản đã xác thực của SME</td></tr>
+<tr><td class="tref">M3</td><td>phí giải ngân</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td><td>Tài khoản phí của FundLok — ngoài phạm vi ký quỹ</td></tr>
+<tr><td class="tref">M4</td><td>chia sẻ doanh thu hằng ngày</td><td>Chia sẻ doanh thu hằng ngày</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td></tr>
+<tr><td class="tref">M5</td><td>phân bổ</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td><td>Số dư nắm giữ của nhà đầu tư tại VPBank</td></tr>
+<tr><td class="tref">M6</td><td>phí quản lý khoản vay</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td><td>Tài khoản phí của FundLok — ngoài phạm vi ký quỹ</td></tr>
+<tr><td class="tref">M7</td><td>rút tiền — về đúng tài khoản đã đăng ký, không tài khoản nào khác. Vòng kín đóng lại tại đây.</td><td>Số dư nắm giữ của nhà đầu tư tại VPBank</td><td>Tài khoản ngân hàng của nhà đầu tư</td></tr>
+<tr><td class="tref">M8</td><td>tái đầu tư</td><td>Số dư nắm giữ của nhà đầu tư tại VPBank</td><td>Tài khoản ký quỹ của dự án — hạn chế, tại VPBank</td></tr>
+    </tbody>
+  </table>
+  <h3>Bốn bước kiểm soát</h3>
+  <table>
+    <thead><tr><th>#</th><th>Bước kiểm soát</th><th>Nội dung kiểm tra</th><th>Hệ quả</th></tr></thead>
+    <tbody>
+<tr><td class="tref">1</td><td><strong>Tài khoản đích</strong></td><td>Mọi người thụ hưởng có nằm trong danh sách tài khoản đích được phép đã đăng ký không?</td><td>Không đạt nếu có tài khoản ngoài danh sách — kể cả tài khoản của chính FundLok.</td></tr>
+<tr><td class="tref">2</td><td><strong>Ghép cặp</strong></td><td>Dòng phí có nằm trong một lệnh đồng thời chi trả cho người thụ hưởng không?</td><td>Không đạt nếu dòng phí đứng một mình, hoặc rút từ số dư đang để không.</td></tr>
+<tr><td class="tref">3</td><td><strong>Tỷ lệ và mức trần</strong></td><td>Dòng phí có nằm trong tỷ lệ đã đăng ký của chính lệnh này, và trong mức trần đã đăng ký không?</td><td>Là phép tính, không phải lời cam kết. Cả hai giá trị cần xác nhận với VPBank.</td></tr>
+<tr><td class="tref">4</td><td><strong>Tạm giữ</strong></td><td>Có tài khoản nào đang bị tạm giữ theo cơ chế xử lý tranh chấp không?</td><td>Nếu bị tạm giữ, dòng phí bị tạm ngưng trong thời gian đó — dòng chi trả người thụ hưởng vẫn được thực hiện.</td></tr>
+    </tbody>
+  </table>
+</details>
+<script>
+(function(){
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var r=document.documentElement;
+    var d=r.getAttribute('data-theme')==='dark'||(!r.hasAttribute('data-theme')&&matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme',d?'light':'dark');
+  });
+})();
+</script>
+</body></html>

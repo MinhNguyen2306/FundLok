@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="#2a78d6,#eb6834,#1baf7a,#4a3aa7">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Section 3.1 — Nine-step end-to-end process</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --band:#fcfcfb; --band-alt:#f6f6f3; --cellbg:#ffffff; --headband:#f6f6f3;
+    --p1:#2a78d6; --p2:#eb6834; --p3:#1baf7a; --p4:#4a3aa7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --band:#1a1a19; --band-alt:#201f1e; --cellbg:#242422; --headband:#201f1e;
+      --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --band:#1a1a19; --band-alt:#201f1e; --cellbg:#242422; --headband:#201f1e;
+    --p1:#3987e5; --p2:#d95926; --p3:#199e70; --p4:#9085e9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 22px 48px;background:var(--plane);color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.55}
+  header,figure,section{max-width:1060px;margin-left:auto;margin-right:auto}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:-0.01em}
+  .sub{color:var(--ink-2);margin:0 0 4px}
+  .meta{color:var(--muted);font-size:12.5px;margin:0}
+  .toolbar{max-width:1060px;margin:16px auto 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1px solid var(--border);
+          background:var(--surface-1);color:var(--ink-2);cursor:pointer}
+  .legend{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+  .legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .scroller{overflow-x:auto;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:6px}
+  svg{display:block;width:100%;height:auto}
+  .band{fill:var(--band)} .band-alt{fill:var(--band-alt)} .headband{fill:var(--headband)}
+  .rowsep,.colsep{stroke:var(--grid);stroke-width:1}
+  .cell{fill:var(--cellbg);stroke:var(--border);stroke-width:1}
+  .cell-neg{fill:none;stroke:var(--grid);stroke-width:1;stroke-dasharray:3 3}
+  .celltext{font-size:10.5px;fill:var(--ink-2)}
+  .celltext-neg{font-size:10.5px;fill:var(--muted);font-style:italic}
+  .steptitle{font-size:11.5px;font-weight:640;fill:var(--ink)}
+  .stepowner{font-size:9.5px;fill:var(--muted)}
+  .stepnum{font-size:10.5px;font-weight:700;fill:var(--surface-1)}
+  .stepnum-bg{fill:var(--ink)}
+  .colname{font-size:13px;font-weight:660;fill:var(--ink)}
+  .colrole{font-size:10px;fill:var(--muted)}
+  .corner{font-size:12.5px;font-weight:660;fill:var(--ink)}
+  .corner-sub{font-size:10px;fill:var(--muted)}
+  .p1-fill{fill:var(--p1)} .p2-fill{fill:var(--p2)} .p3-fill{fill:var(--p3)} .p4-fill{fill:var(--p4)}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:11px}
+  details{max-width:1060px;margin:26px auto 0}
+  summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
+  table{border-collapse:collapse;width:100%;margin-top:12px;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{color:var(--muted);font-weight:620;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}
+  .tnum{font-variant-numeric:tabular-nums;color:var(--muted)}
+  .tow{color:var(--muted);font-size:11px}
+  @media print{
+    body{padding:0;background:#fff} .toolbar{display:none}
+    .scroller{overflow:visible;border:none;padding:0} details{display:none}
+    header{margin-bottom:8px} h1{font-size:14pt}
+    .sub{font-size:9.5pt;margin-bottom:2px} .meta{font-size:8.5pt}
+    figure{text-align:center}
+    svg{width:auto!important;height:149mm!important;margin:0 auto}
+    figcaption{font-size:8pt;text-align:left;margin-top:5px}
+  }
+</style></head>
+<body>
+<header>
+  <h1>Section 3.1 — Nine-step end-to-end process</h1>
+  <p class="sub">From party onboarding to loan closure, with the accountable owner named for every step.</p>
+  <p class="meta">Four parties, four distinct roles, no party holding two roles. Money moves only through the
+  custodian; FundLok moves instructions and data, never funds.</p>
+</header>
+<div class="toolbar">
+  <button id="themeBtn" type="button">Toggle dark mode</button>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--p1)"></span>Investor — lender of record</span>
+    <span><span class="sw" style="background:var(--p2)"></span>SME — borrower</span>
+    <span><span class="sw" style="background:var(--p3)"></span>FundLok — arranger &amp; servicer</span>
+    <span><span class="sw" style="background:var(--p4)"></span>VPBank — custodian</span>
+  </div>
+</div>
+<figure>
+  <div class="scroller">
+    <svg viewBox="0 0 1006 764" role="img" aria-label="Nine-step process swimlane. Steps run top to bottom as rows; the four parties are columns. A full text equivalent follows in the table.">
+<rect class="band" x="250" y="74" width="187" height="682"/>
+<rect class="band-alt" x="437" y="74" width="187" height="682"/>
+<rect class="band" x="624" y="74" width="187" height="682"/>
+<rect class="band-alt" x="811" y="74" width="187" height="682"/>
+<rect class="headband" x="0" y="0" width="998" height="74"/>
+<text class="corner" x="12" y="28">Nine-step end-to-end process</text>
+<text class="corner-sub" x="12" y="46">onboarding → loan closure</text>
+<text class="corner-sub" x="12" y="62">owner named for every step</text>
+<rect class="colhead p1-fill" x="256" y="16" width="175" height="4" rx="2"/>
+<text class="colname" x="343.5" y="40" text-anchor="middle">Investor</text>
+<text class="colrole" x="343.5" y="56" text-anchor="middle">lender of record</text>
+<rect class="colhead p2-fill" x="443" y="16" width="175" height="4" rx="2"/>
+<text class="colname" x="530.5" y="40" text-anchor="middle">SME</text>
+<text class="colrole" x="530.5" y="56" text-anchor="middle">borrower</text>
+<rect class="colhead p3-fill" x="630" y="16" width="175" height="4" rx="2"/>
+<text class="colname" x="717.5" y="40" text-anchor="middle">FundLok</text>
+<text class="colrole" x="717.5" y="56" text-anchor="middle">arranger &amp; servicer</text>
+<rect class="colhead p4-fill" x="817" y="16" width="175" height="4" rx="2"/>
+<text class="colname" x="904.5" y="40" text-anchor="middle">VPBank</text>
+<text class="colrole" x="904.5" y="56" text-anchor="middle">custodian</text>
+<line class="rowsep" x1="0" y1="74" x2="998" y2="74"/>
+<circle class="stepnum-bg" cx="24" cy="94" r="11"/>
+<text class="stepnum" x="24" y="98" text-anchor="middle">1</text>
+<text class="steptitle" x="42" y="91">
+<tspan x="42" dy="0">Investor onboarding &amp;</tspan>
+<tspan x="42" dy="13">account opening</tspan>
+</text>
+<text class="stepowner" x="42" y="123">
+<tspan x="42" dy="0">Owner: VPBank — Onboarding</tspan>
+<tspan x="42" dy="11">(account) · FundLok —</tspan>
+<tspan x="42" dy="11">Onboarding Ops (platform)</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="82" width="171" height="66" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="82" width="3" height="66" rx="1.5"/>
+<text class="celltext" x="268" y="97">
+<tspan x="268" dy="0">Registers on platform;</tspan>
+<tspan x="268" dy="13">submits documents to the</tspan>
+<tspan x="268" dy="13">bank</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="82" width="171" height="66" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="82" width="3" height="66" rx="1.5"/>
+<text class="celltext" x="642" y="97">
+<tspan x="642" dy="0">Platform registration;</tspan>
+<tspan x="642" dy="13">suitability record</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="82" width="171" height="66" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="82" width="3" height="66" rx="1.5"/>
+<text class="celltext" x="829" y="97">
+<tspan x="829" dy="0">Performs its own</tspan>
+<tspan x="829" dy="13">KYC/CDD; opens investor</tspan>
+<tspan x="829" dy="13">account (§1.8)</tspan>
+</text>
+<line class="rowsep" x1="0" y1="156" x2="998" y2="156"/>
+<circle class="stepnum-bg" cx="24" cy="176" r="11"/>
+<text class="stepnum" x="24" y="180" text-anchor="middle">2</text>
+<text class="steptitle" x="42" y="173">
+<tspan x="42" dy="0">SME onboarding, appraisal</tspan>
+<tspan x="42" dy="13">&amp; listing</tspan>
+</text>
+<text class="stepowner" x="42" y="205">
+<tspan x="42" dy="0">Owner: FundLok — Credit &amp;</tspan>
+<tspan x="42" dy="11">Underwriting</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="164" width="171" height="58" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="164" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="268" y="179">
+<tspan x="268" dy="0">Reviews published</tspan>
+<tspan x="268" dy="13">listings</tspan>
+</text>
+<rect class="cell p2-cell" x="445" y="164" width="171" height="58" rx="5"/>
+<rect class="cell-edge p2-fill" x="445" y="164" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="455" y="179">
+<tspan x="455" dy="0">Registers; submits</tspan>
+<tspan x="455" dy="13">financials and personal</tspan>
+<tspan x="455" dy="13">guarantee</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="164" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="164" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="179">
+<tspan x="642" dy="0">Appraisal; assigns rate</tspan>
+<tspan x="642" dy="13">tier; publishes listing</tspan>
+</text>
+<rect class="cell-neg p4-cell" x="819" y="164" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="164" width="3" height="58" rx="1.5"/>
+<text class="celltext-neg" x="829" y="179">
+<tspan x="829" dy="0">No appraisal and no</tspan>
+<tspan x="829" dy="13">credit decision</tspan>
+</text>
+<line class="rowsep" x1="0" y1="230" x2="998" y2="230"/>
+<circle class="stepnum-bg" cx="24" cy="250" r="11"/>
+<text class="stepnum" x="24" y="254" text-anchor="middle">3</text>
+<text class="steptitle" x="42" y="247">
+<tspan x="42" dy="0">Escrow account</tspan>
+<tspan x="42" dy="13">provisioning</tspan>
+</text>
+<text class="stepowner" x="42" y="279">
+<tspan x="42" dy="0">Owner: VPBank — Custody</tspan>
+<tspan x="42" dy="11">Operations</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="238" width="171" height="66" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="238" width="3" height="66" rx="1.5"/>
+<text class="celltext" x="642" y="253">
+<tspan x="642" dy="0">Requests account;</tspan>
+<tspan x="642" dy="13">supplies permitted-</tspan>
+<tspan x="642" dy="13">destination list</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="238" width="171" height="66" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="238" width="3" height="66" rx="1.5"/>
+<text class="celltext" x="829" y="253">
+<tspan x="829" dy="0">Opens restricted escrow</tspan>
+<tspan x="829" dy="13">account; sets</tspan>
+<tspan x="829" dy="13">destinations + dual</tspan>
+<tspan x="829" dy="13">control</tspan>
+</text>
+<line class="rowsep" x1="0" y1="312" x2="998" y2="312"/>
+<circle class="stepnum-bg" cx="24" cy="332" r="11"/>
+<text class="stepnum" x="24" y="336" text-anchor="middle">4</text>
+<text class="steptitle" x="42" y="329">
+<tspan x="42" dy="0">Loan agreement execution</tspan>
+</text>
+<text class="stepowner" x="42" y="348">
+<tspan x="42" dy="0">Owner: FundLok — Platform &amp;</tspan>
+<tspan x="42" dy="11">Legal Ops</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="320" width="171" height="58" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="320" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="268" y="335">
+<tspan x="268" dy="0">Signs loan agreement +</tspan>
+<tspan x="268" dy="13">management authorisation</tspan>
+</text>
+<rect class="cell p2-cell" x="445" y="320" width="171" height="58" rx="5"/>
+<rect class="cell-edge p2-fill" x="445" y="320" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="455" y="335">
+<tspan x="455" dy="0">Signs loan agreement +</tspan>
+<tspan x="455" dy="13">platform terms</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="320" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="320" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="335">
+<tspan x="642" dy="0">Generates contracts;</tspan>
+<tspan x="642" dy="13">records commitment</tspan>
+</text>
+<rect class="cell-neg p4-cell" x="819" y="320" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="320" width="3" height="58" rx="1.5"/>
+<text class="celltext-neg" x="829" y="335">
+<tspan x="829" dy="0">Not a party to the loan</tspan>
+<tspan x="829" dy="13">agreement</tspan>
+</text>
+<line class="rowsep" x1="0" y1="386" x2="998" y2="386"/>
+<circle class="stepnum-bg" cx="24" cy="406" r="11"/>
+<text class="stepnum" x="24" y="410" text-anchor="middle">5</text>
+<text class="steptitle" x="42" y="403">
+<tspan x="42" dy="0">Funding into escrow</tspan>
+</text>
+<text class="stepowner" x="42" y="422">
+<tspan x="42" dy="0">Owner: Investor (transfer) ·</tspan>
+<tspan x="42" dy="11">VPBank — Custody Ops (credit)</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="394" width="171" height="58" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="394" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="268" y="409">
+<tspan x="268" dy="0">Transfers principal from</tspan>
+<tspan x="268" dy="13">own registered account</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="394" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="394" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="409">
+<tspan x="642" dy="0">Records originating</tspan>
+<tspan x="642" dy="13">account; reconciles</tspan>
+<tspan x="642" dy="13">credit</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="394" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="394" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="829" y="409">
+<tspan x="829" dy="0">Credits escrow account;</tspan>
+<tspan x="829" dy="13">notifies FundLok</tspan>
+</text>
+<line class="rowsep" x1="0" y1="460" x2="998" y2="460"/>
+<circle class="stepnum-bg" cx="24" cy="480" r="11"/>
+<text class="stepnum" x="24" y="484" text-anchor="middle">6</text>
+<text class="steptitle" x="42" y="477">
+<tspan x="42" dy="0">Disbursement to the SME</tspan>
+</text>
+<text class="stepowner" x="42" y="496">
+<tspan x="42" dy="0">Owner: FundLok — Treasury Ops</tspan>
+<tspan x="42" dy="11">(instruction) · VPBank —</tspan>
+<tspan x="42" dy="11">Custody Ops (execution)</tspan>
+</text>
+<rect class="cell p2-cell" x="445" y="468" width="171" height="58" rx="5"/>
+<rect class="cell-edge p2-fill" x="445" y="468" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="455" y="483">
+<tspan x="455" dy="0">Receives principal in</tspan>
+<tspan x="455" dy="13">its verified account</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="468" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="468" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="483">
+<tspan x="642" dy="0">Verifies conditions;</tspan>
+<tspan x="642" dy="13">issues dual-control</tspan>
+<tspan x="642" dy="13">instruction</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="468" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="468" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="829" y="483">
+<tspan x="829" dy="0">Checks conditions;</tspan>
+<tspan x="829" dy="13">disburses to whitelisted</tspan>
+<tspan x="829" dy="13">SME account</tspan>
+</text>
+<line class="rowsep" x1="0" y1="534" x2="998" y2="534"/>
+<circle class="stepnum-bg" cx="24" cy="554" r="11"/>
+<text class="stepnum" x="24" y="558" text-anchor="middle">7</text>
+<text class="steptitle" x="42" y="551">
+<tspan x="42" dy="0">Repayment collection</tspan>
+</text>
+<text class="stepowner" x="42" y="570">
+<tspan x="42" dy="0">Owner: SME (payment) · VPBank</tspan>
+<tspan x="42" dy="11">— Collections</tspan>
+</text>
+<rect class="cell p2-cell" x="445" y="542" width="171" height="58" rx="5"/>
+<rect class="cell-edge p2-fill" x="445" y="542" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="455" y="557">
+<tspan x="455" dy="0">Repays via VietQR or</tspan>
+<tspan x="455" dy="13">bank transfer</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="542" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="542" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="557">
+<tspan x="642" dy="0">Matches to schedule;</tspan>
+<tspan x="642" dy="13">reconciles</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="542" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="542" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="829" y="557">
+<tspan x="829" dy="0">Credits escrow account;</tspan>
+<tspan x="829" dy="13">notifies FundLok</tspan>
+</text>
+<line class="rowsep" x1="0" y1="608" x2="998" y2="608"/>
+<circle class="stepnum-bg" cx="24" cy="628" r="11"/>
+<text class="stepnum" x="24" y="632" text-anchor="middle">8</text>
+<text class="steptitle" x="42" y="625">
+<tspan x="42" dy="0">Return to investors</tspan>
+</text>
+<text class="stepowner" x="42" y="644">
+<tspan x="42" dy="0">Owner: FundLok — Treasury Ops</tspan>
+<tspan x="42" dy="11">(instruction) · VPBank —</tspan>
+<tspan x="42" dy="11">Custody Ops (execution)</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="616" width="171" height="58" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="616" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="268" y="631">
+<tspan x="268" dy="0">Receives funds in the</tspan>
+<tspan x="268" dy="13">originating account only</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="616" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="616" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="631">
+<tspan x="642" dy="0">Computes entitlement;</tspan>
+<tspan x="642" dy="13">issues dual-control</tspan>
+<tspan x="642" dy="13">instruction</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="616" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="616" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="829" y="631">
+<tspan x="829" dy="0">Transfers to originating</tspan>
+<tspan x="829" dy="13">investor account —</tspan>
+<tspan x="829" dy="13">closed loop</tspan>
+</text>
+<line class="rowsep" x1="0" y1="682" x2="998" y2="682"/>
+<circle class="stepnum-bg" cx="24" cy="702" r="11"/>
+<text class="stepnum" x="24" y="706" text-anchor="middle">9</text>
+<text class="steptitle" x="42" y="699">
+<tspan x="42" dy="0">Closure &amp; release of the</tspan>
+<tspan x="42" dy="13">escrow account</tspan>
+</text>
+<text class="stepowner" x="42" y="731">
+<tspan x="42" dy="0">Owner: FundLok —</tspan>
+<tspan x="42" dy="11">Reconciliation &amp; Reporting</tspan>
+</text>
+<rect class="cell p1-cell" x="258" y="690" width="171" height="58" rx="5"/>
+<rect class="cell-edge p1-fill" x="258" y="690" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="268" y="705">
+<tspan x="268" dy="0">Confirms settlement;</tspan>
+<tspan x="268" dy="13">receives statement</tspan>
+</text>
+<rect class="cell p2-cell" x="445" y="690" width="171" height="58" rx="5"/>
+<rect class="cell-edge p2-fill" x="445" y="690" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="455" y="705">
+<tspan x="455" dy="0">Obligation discharged</tspan>
+</text>
+<rect class="cell p3-cell" x="632" y="690" width="171" height="58" rx="5"/>
+<rect class="cell-edge p3-fill" x="632" y="690" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="642" y="705">
+<tspan x="642" dy="0">Final reconciliation;</tspan>
+<tspan x="642" dy="13">closes the loan record</tspan>
+</text>
+<rect class="cell p4-cell" x="819" y="690" width="171" height="58" rx="5"/>
+<rect class="cell-edge p4-fill" x="819" y="690" width="3" height="58" rx="1.5"/>
+<text class="celltext" x="829" y="705">
+<tspan x="829" dy="0">Final statement; zero</tspan>
+<tspan x="829" dy="13">balance; releases</tspan>
+<tspan x="829" dy="13">account</tspan>
+</text>
+<line class="rowsep" x1="0" y1="756" x2="998" y2="756"/>
+<line class="colsep" x1="250" y1="0" x2="250" y2="756"/>
+<line class="colsep" x1="437" y1="0" x2="437" y2="756"/>
+<line class="colsep" x1="624" y1="0" x2="624" y2="756"/>
+<line class="colsep" x1="811" y1="0" x2="811" y2="756"/>
+<line class="colsep" x1="998" y1="0" x2="998" y2="756"/>
+    </svg>
+  </div>
+  <figcaption>Dashed, italicised cells state what a party deliberately does <em>not</em> do. Steps run top to
+  bottom; parties are the columns.</figcaption>
+</figure>
+<details open>
+  <summary>Text equivalent — the nine steps</summary>
+  <table>
+    <thead><tr><th>#</th><th>Step &amp; owner</th><th>Investor</th><th>SME</th><th>FundLok</th><th>VPBank</th></tr></thead>
+    <tbody>
+<tr><td class="tnum">1</td><td><strong>Investor onboarding &amp; account opening</strong><br><span class="tow">VPBank — Onboarding (account) · FundLok — Onboarding Ops (platform)</span></td><td>Registers on platform; submits documents to the bank</td><td>—</td><td>Platform registration; suitability record</td><td>Performs its own KYC/CDD; opens investor account (§1.8)</td></tr>
+<tr><td class="tnum">2</td><td><strong>SME onboarding, appraisal &amp; listing</strong><br><span class="tow">FundLok — Credit &amp; Underwriting</span></td><td>Reviews published listings</td><td>Registers; submits financials and personal guarantee</td><td>Appraisal; assigns rate tier; publishes listing</td><td>No appraisal and no credit decision</td></tr>
+<tr><td class="tnum">3</td><td><strong>Escrow account provisioning</strong><br><span class="tow">VPBank — Custody Operations</span></td><td>—</td><td>—</td><td>Requests account; supplies permitted-destination list</td><td>Opens restricted escrow account; sets destinations + dual control</td></tr>
+<tr><td class="tnum">4</td><td><strong>Loan agreement execution</strong><br><span class="tow">FundLok — Platform &amp; Legal Ops</span></td><td>Signs loan agreement + management authorisation</td><td>Signs loan agreement + platform terms</td><td>Generates contracts; records commitment</td><td>Not a party to the loan agreement</td></tr>
+<tr><td class="tnum">5</td><td><strong>Funding into escrow</strong><br><span class="tow">Investor (transfer) · VPBank — Custody Ops (credit)</span></td><td>Transfers principal from own registered account</td><td>—</td><td>Records originating account; reconciles credit</td><td>Credits escrow account; notifies FundLok</td></tr>
+<tr><td class="tnum">6</td><td><strong>Disbursement to the SME</strong><br><span class="tow">FundLok — Treasury Ops (instruction) · VPBank — Custody Ops (execution)</span></td><td>—</td><td>Receives principal in its verified account</td><td>Verifies conditions; issues dual-control instruction</td><td>Checks conditions; disburses to whitelisted SME account</td></tr>
+<tr><td class="tnum">7</td><td><strong>Repayment collection</strong><br><span class="tow">SME (payment) · VPBank — Collections</span></td><td>—</td><td>Repays via VietQR or bank transfer</td><td>Matches to schedule; reconciles</td><td>Credits escrow account; notifies FundLok</td></tr>
+<tr><td class="tnum">8</td><td><strong>Return to investors</strong><br><span class="tow">FundLok — Treasury Ops (instruction) · VPBank — Custody Ops (execution)</span></td><td>Receives funds in the originating account only</td><td>—</td><td>Computes entitlement; issues dual-control instruction</td><td>Transfers to originating investor account — closed loop</td></tr>
+<tr><td class="tnum">9</td><td><strong>Closure &amp; release of the escrow account</strong><br><span class="tow">FundLok — Reconciliation &amp; Reporting</span></td><td>Confirms settlement; receives statement</td><td>Obligation discharged</td><td>Final reconciliation; closes the loan record</td><td>Final statement; zero balance; releases account</td></tr>
+    </tbody>
+  </table>
+</details>
+<script>
+(function(){
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var r=document.documentElement;
+    var d=r.getAttribute('data-theme')==='dark'||(!r.hasAttribute('data-theme')&&matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme',d?'light':'dark');
+  });
+})();
+</script>
+</body></html>

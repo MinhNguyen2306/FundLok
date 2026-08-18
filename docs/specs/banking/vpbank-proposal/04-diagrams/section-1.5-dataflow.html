@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-palette="#2a78d6,#1baf7a,#4a3aa7">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Section 1.5 — Data flow</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7; --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --zonebg:#f6f6f3; --panelbg:#f6f6f3;
+    --z1:#2a78d6; --z2:#1baf7a; --z3:#4a3aa7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --zonebg:#201f1e; --panelbg:#201f1e;
+      --z1:#3987e5; --z2:#199e70; --z3:#9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --zonebg:#201f1e; --panelbg:#201f1e;
+    --z1:#3987e5; --z2:#199e70; --z3:#9085e9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 22px 48px;background:var(--plane);color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.55}
+  header,figure,details{max-width:1180px;margin-left:auto;margin-right:auto}
+  h1{font-size:21px;margin:0 0 6px;letter-spacing:-0.01em}
+  .sub{color:var(--ink-2);margin:0 0 4px} .meta{color:var(--muted);font-size:12.5px;margin:0}
+  .toolbar{max-width:1180px;margin:16px auto 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{font:inherit;font-size:12.5px;padding:6px 13px;border-radius:999px;border:1px solid var(--border);
+          background:var(--surface-1);color:var(--ink-2);cursor:pointer}
+  .legend{margin-left:auto;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);align-items:center}
+  .legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .legend .ln{display:inline-block;width:22px;border-top:1.8px solid var(--ink-2);margin-right:6px;vertical-align:3px}
+  .legend .ln-d{border-top-style:dashed;border-color:var(--muted)}
+  .scroller{overflow-x:auto;background:var(--surface-1);border:1px solid var(--border);border-radius:12px;padding:6px}
+  svg{display:block;width:100%;height:auto}
+  .zone{fill:var(--zonebg);stroke:var(--border);stroke-width:1}
+  .zname{font-size:14px;font-weight:660;fill:var(--ink)}
+  .zsub{font-size:10.5px;fill:var(--muted)}
+  .title{font-size:13.5px;font-weight:660;fill:var(--ink)}
+  .subtitle{font-size:11px;fill:var(--ink-2)}
+  .flow-r,.flow-l{stroke:var(--z2);stroke-width:1.7}
+  .bypass{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4;fill:none}
+  .flowlabel{font-size:10.5px;fill:var(--ink-2)}
+  .bypasslabel{font-size:10.5px;fill:var(--muted)}
+  .reftag{fill:var(--z2)} .reftag-muted{fill:var(--muted)}
+  .reftext{font-size:9.5px;font-weight:700;fill:#fff}
+  .panel{fill:var(--panelbg);stroke:var(--border);stroke-width:1}
+  .panel-title{font-size:12.5px;font-weight:660;fill:var(--ink)}
+  .panel-sub{font-size:10.5px;fill:var(--ink-2)}
+  .panel-item{font-size:10.5px;fill:var(--ink-2)}
+  .bullet{fill:var(--muted)}
+  .z1-fill{fill:var(--z1)} .z2-fill{fill:var(--z2)} .z3-fill{fill:var(--z3)}
+  figcaption{font-size:12.5px;color:var(--muted);margin-top:11px}
+  summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
+  details{margin-top:24px}
+  table{border-collapse:collapse;width:100%;margin-top:12px;font-size:12.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{color:var(--muted);font-weight:620;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}
+  .tref{font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  @media print{
+    body{padding:0;background:#fff} .toolbar{display:none} details{display:none}
+    .scroller{overflow:visible;border:none;padding:0}
+    header{margin-bottom:8px} h1{font-size:14pt} .sub{font-size:9.5pt} .meta{font-size:8.5pt}
+    figure{max-width:none;text-align:center}
+    svg{width:auto!important;height:150mm!important;margin:0 auto}
+    figcaption{font-size:8pt;text-align:left;margin-top:5px}
+  }
+</style></head>
+<body>
+<header>
+  <h1>Section 1.5 — Data flow</h1>
+  <p class="sub">What crosses the boundary between FundLok and VPBank, in which direction, and what deliberately does not.</p>
+  <p class="meta">FundLok moves data and instructions, not money. Funds move only between the parties' own accounts and the escrow account held at VPBank.</p>
+</header>
+<div class="toolbar">
+  <button id="themeBtn" type="button">Toggle dark mode</button>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--z1)"></span>Parties</span>
+    <span><span class="sw" style="background:var(--z2)"></span>FundLok</span>
+    <span><span class="sw" style="background:var(--z3)"></span>VPBank</span>
+    <span><span class="ln"></span>data or instruction</span>
+    <span><span class="ln ln-d"></span>direct to the bank, bypassing FundLok</span>
+  </div>
+</div>
+<figure>
+  <div class="scroller">
+    <svg viewBox="0 0 1232 566" role="img" aria-label="Data-flow diagram with three zones: the parties, FundLok, and VPBank. Labelled flows cross each boundary; a dashed flow goes directly from the parties to VPBank bypassing FundLok. A panel lists data that never crosses to VPBank. A full text equivalent follows.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--z2)"/>
+        </marker>
+        <marker id="arMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--muted)"/>
+        </marker>
+      </defs>
+<rect class="zone z1-zone" x="12" y="78" width="236" height="282" rx="9"/>
+<rect class="zone-top z1-fill" x="22" y="89" width="216" height="4" rx="2"/>
+<text class="zname" x="130.0" y="118" text-anchor="middle">Parties</text>
+<text class="zsub" x="130.0" y="136" text-anchor="middle">Investor · SME</text>
+<rect class="zone z2-zone" x="498" y="78" width="236" height="282" rx="9"/>
+<rect class="zone-top z2-fill" x="508" y="89" width="216" height="4" rx="2"/>
+<text class="zname" x="616.0" y="118" text-anchor="middle">FundLok</text>
+<text class="zsub" x="616.0" y="136" text-anchor="middle">arranger &amp; servicer</text>
+<rect class="zone z3-zone" x="984" y="78" width="236" height="282" rx="9"/>
+<rect class="zone-top z3-fill" x="994" y="89" width="216" height="4" rx="2"/>
+<text class="zname" x="1102.0" y="118" text-anchor="middle">VPBank</text>
+<text class="zsub" x="1102.0" y="136" text-anchor="middle">custodian</text>
+<text class="title" x="12" y="26">Data and instructions cross the boundary. Money does not.</text>
+<text class="subtitle" x="12" y="48">FundLok moves data and instructions, never funds. Every flow below is data or an instruction.</text>
+<line class="flow-r" x1="254" y1="121.0" x2="482" y2="121.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="285.0" y="101.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="298.0" y="112.0" text-anchor="middle">P1</text>
+<text class="flowlabel" x="317.0" y="112.0">
+<tspan x="317.0" dy="0">Identity &amp; enterprise data</tspan>
+</text>
+<line class="flow-r" x1="254" y1="163.0" x2="482" y2="163.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="285.0" y="137.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="298.0" y="148.0" text-anchor="middle">P2</text>
+<text class="flowlabel" x="317.0" y="148.0">
+<tspan x="317.0" dy="0">Financial statements &amp;</tspan>
+<tspan x="317.0" dy="12">appraisal inputs</tspan>
+</text>
+<line class="flow-r" x1="254" y1="205.0" x2="482" y2="205.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="285.0" y="179.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="298.0" y="190.0" text-anchor="middle">P3</text>
+<text class="flowlabel" x="317.0" y="190.0">
+<tspan x="317.0" dy="0">Settlement account details &amp;</tspan>
+<tspan x="317.0" dy="12">consent record</tspan>
+</text>
+<line class="flow-l" x1="492" y1="247.0" x2="264" y2="247.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="285.0" y="221.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="298.0" y="232.0" text-anchor="middle">P4</text>
+<text class="flowlabel" x="317.0" y="232.0">
+<tspan x="317.0" dy="0">Loan terms, schedule,</tspan>
+<tspan x="317.0" dy="12">statements &amp; holdings</tspan>
+</text>
+<line class="flow-r" x1="740" y1="121.0" x2="968" y2="121.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="95.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="106.0" text-anchor="middle">F1</text>
+<text class="flowlabel" x="803.0" y="106.0">
+<tspan x="803.0" dy="0">Account provisioning request &amp;</tspan>
+<tspan x="803.0" dy="12">permitted-destination list</tspan>
+</text>
+<line class="flow-r" x1="740" y1="163.0" x2="968" y2="163.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="137.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="148.0" text-anchor="middle">F2</text>
+<text class="flowlabel" x="803.0" y="148.0">
+<tspan x="803.0" dy="0">Payment instructions — dual</tspan>
+<tspan x="803.0" dy="12">authorised</tspan>
+</text>
+<line class="flow-r" x1="740" y1="205.0" x2="968" y2="205.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="179.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="190.0" text-anchor="middle">F3</text>
+<text class="flowlabel" x="803.0" y="190.0">
+<tspan x="803.0" dy="0">Channel administration —</tspan>
+<tspan x="803.0" dy="12">authorised users</tspan>
+</text>
+<line class="flow-l" x1="978" y1="247.0" x2="750" y2="247.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="227.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="238.0" text-anchor="middle">B1</text>
+<text class="flowlabel" x="803.0" y="238.0">
+<tspan x="803.0" dy="0">Escrow account number &amp; status</tspan>
+</text>
+<line class="flow-l" x1="978" y1="289.0" x2="750" y2="289.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="263.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="274.0" text-anchor="middle">B2</text>
+<text class="flowlabel" x="803.0" y="274.0">
+<tspan x="803.0" dy="0">Instruction acknowledgement &amp;</tspan>
+<tspan x="803.0" dy="12">per-transfer outcome</tspan>
+</text>
+<line class="flow-l" x1="978" y1="331.0" x2="750" y2="331.0" marker-end="url(#ar)"/>
+<rect class="reftag" x="771.0" y="311.0" width="26" height="14" rx="3"/>
+<text class="reftext" x="784.0" y="322.0" text-anchor="middle">B3</text>
+<text class="flowlabel" x="803.0" y="322.0">
+<tspan x="803.0" dy="0">Daily statement &amp; balance</tspan>
+</text>
+<path class="bypass" d="M 130.0 360 V 390 H 1102.0 V 360" marker-end="url(#arMuted)"/>
+<rect class="reftag reftag-muted" x="466.0" y="397" width="26" height="14" rx="3"/>
+<text class="reftext reftext-muted" x="479.0" y="408" text-anchor="middle">V0</text>
+<text class="bypasslabel" x="498.0" y="408">
+<tspan x="498.0" dy="0">Account-opening documents for the bank&#x27;s own due diligence — submitted</tspan>
+<tspan x="498.0" dy="12">directly, never routed through FundLok</tspan>
+</text>
+<rect class="panel" x="12" y="422" width="1208" height="118" rx="9"/>
+<text class="panel-title" x="30" y="448">Never crosses to VPBank</text>
+<text class="panel-sub" x="30" y="465">VPBank makes no credit decision, so it receives no credit information. Data minimisation is a design rule, not a policy statement.</text>
+<circle class="bullet" cx="33.0" cy="484" r="2"/>
+<text class="panel-item" x="43.0" y="488">Credit score, grade, rate tier or any appraisal output</text>
+<circle class="bullet" cx="619.0" cy="484" r="2"/>
+<text class="panel-item" x="629.0" y="488">SME financial statements or supporting documentation</text>
+<circle class="bullet" cx="33.0" cy="501" r="2"/>
+<text class="panel-item" x="43.0" y="505">Personal guarantee terms or enforcement detail</text>
+<circle class="bullet" cx="619.0" cy="501" r="2"/>
+<text class="panel-item" x="629.0" y="505">Investor portfolio holdings or platform behaviour</text>
+<circle class="bullet" cx="33.0" cy="518" r="2"/>
+<text class="panel-item" x="43.0" y="522">Any personal data beyond what a named transfer requires</text>
+    </svg>
+  </div>
+  <figcaption>Solid flows are data or instructions. The dashed flow is submitted by the party directly to VPBank and
+  never passes through FundLok, because due diligence on account holders is the bank's own.</figcaption>
+</figure>
+<details open>
+  <summary>Text equivalent — every flow</summary>
+  <table>
+    <thead><tr><th>Ref</th><th>What is exchanged</th><th>Direction</th></tr></thead>
+    <tbody>
+<tr><td class="tref">P1</td><td>Identity &amp; enterprise data</td><td>Parties → FundLok</td></tr>
+<tr><td class="tref">P2</td><td>Financial statements &amp; appraisal inputs</td><td>Parties → FundLok</td></tr>
+<tr><td class="tref">P3</td><td>Settlement account details &amp; consent record</td><td>Parties → FundLok</td></tr>
+<tr><td class="tref">P4</td><td>Loan terms, schedule, statements &amp; holdings</td><td>FundLok → Parties</td></tr>
+<tr><td class="tref">F1</td><td>Account provisioning request &amp; permitted-destination list</td><td>FundLok → VPBank</td></tr>
+<tr><td class="tref">F2</td><td>Payment instructions — dual authorised</td><td>FundLok → VPBank</td></tr>
+<tr><td class="tref">F3</td><td>Channel administration — authorised users</td><td>FundLok → VPBank</td></tr>
+<tr><td class="tref">B1</td><td>Escrow account number &amp; status</td><td>VPBank → FundLok</td></tr>
+<tr><td class="tref">B2</td><td>Instruction acknowledgement &amp; per-transfer outcome</td><td>VPBank → FundLok</td></tr>
+<tr><td class="tref">B3</td><td>Daily statement &amp; balance</td><td>VPBank → FundLok</td></tr>
+<tr><td class="tref">V0</td><td>Account-opening documents for the bank&#x27;s own due diligence — submitted directly, never routed through FundLok</td><td>Parties → VPBank, direct</td></tr>
+    </tbody>
+  </table>
+</details>
+<script>
+(function(){
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var r=document.documentElement;
+    var d=r.getAttribute('data-theme')==='dark'||(!r.hasAttribute('data-theme')&&matchMedia('(prefers-color-scheme: dark)').matches);
+    r.setAttribute('data-theme',d?'light':'dark');
+  });
+})();
+</script>
+</body></html>
