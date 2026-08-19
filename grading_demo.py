@@ -1,7 +1,8 @@
 """Demo script for FundLok ML Underwriting & Grading Engine.
 
 Demonstrates multiple underwriting scenarios spanning different grading ranges,
-decision types (APPROVED, REVIEW, REJECT, INSUFFICIENT_DATA), and gate triggers.
+all five decision types (APPROVED, AI_PENDING, REVIEW, REJECT,
+INSUFFICIENT_DATA), and gate triggers.
 
 Reads test cases directly from `grading_test_cases.csv` if present (easy for Excel/BAs).
 Supports '#' comment lines in the CSV file for stakeholder instructions.
@@ -48,6 +49,8 @@ def format_decision(decision: str) -> str:
         return f"{YELLOW}{BOLD}⚠ REVIEW (Soft Gate Fired){RESET}"
     elif decision == "REJECT":
         return f"{RED}{BOLD}✗ REJECT (Hard Gate Fired){RESET}"
+    elif decision == "AI_PENDING":
+        return f"{MAGENTA}{BOLD}◷ AI_PENDING (AI Score Missing){RESET}"
     elif decision == "INSUFFICIENT_DATA":
         return f"{BLUE}{BOLD}ℹ INSUFFICIENT DATA{RESET}"
     return f"{BOLD}{decision}{RESET}"
@@ -70,16 +73,23 @@ def parse_csv_row_to_input(row: Dict[str, str]) -> GradingInput:
     raw_flags = row.get("fraud_flags") or ""
     fraud_flags = tuple(flag.strip() for flag in str(raw_flags).split(",") if flag.strip())
 
-    # AI Scores
-    ai_scores = {
-        "regulatory": float(row["ai_regulatory"]),
-        "input_cost_vol": float(row["ai_input_cost_vol"]),
-        "cyclicality": float(row["ai_cyclicality"]),
-        "competitor": float(row["ai_competitor"]),
-        "macro": float(row["ai_macro"]),
-        "uncontrollable": float(row["ai_uncontrollable"]),
-        "founder": float(row["ai_founder"]),
+    # AI Scores. A blank column is omitted from the mapping rather than
+    # defaulted -- that is what drives AI_PENDING (R3/R8). Never substitute a
+    # value here: a fabricated AI score silently becomes a real interest rate.
+    ai_column_keys = {
+        "regulatory": "ai_regulatory",
+        "input_cost_vol": "ai_input_cost_vol",
+        "cyclicality": "ai_cyclicality",
+        "competitor": "ai_competitor",
+        "macro": "ai_macro",
+        "uncontrollable": "ai_uncontrollable",
+        "founder": "ai_founder",
     }
+    ai_scores = {}
+    for factor_key, column in ai_column_keys.items():
+        raw = row.get(column)
+        if raw is not None and str(raw).strip() != "":
+            ai_scores[factor_key] = float(str(raw).strip())
 
     cic_val = row.get("cic_score")
     cic_score = int(float(str(cic_val).strip())) if cic_val is not None and str(cic_val).strip() != "" else None
@@ -132,13 +142,18 @@ def evaluate_and_display_case(case_num: str, title: str, description: str, input
         match_str = f"{GREEN}✓ MATCHES EXPECTED{RESET}" if result.decision == expected_decision else f"{RED}✗ MISMATCH (Expected {expected_decision}){RESET}"
         print(f"  {BOLD}Validation:{RESET}       {match_str}")
 
+    # Under AI_PENDING the engine still returns a grade and a rate, computed
+    # over the factors present. They are provisional and biased low (a missing
+    # `founder` bonus contributes 0), so they must never be quoted.
+    provisional = f" {MAGENTA}(PROVISIONAL — do not quote){RESET}" if result.decision == "AI_PENDING" else ""
+
     if result.final_grade is not None:
-        print(f"  {BOLD}Final Score/Grade:{RESET} {GREEN if result.final_grade >= 80 else (YELLOW if result.final_grade >= 70 else RED)}{result.final_grade:.6f} / 100{RESET}")
+        print(f"  {BOLD}Final Score/Grade:{RESET} {GREEN if result.final_grade >= 80 else (YELLOW if result.final_grade >= 70 else RED)}{result.final_grade:.6f} / 100{RESET}{provisional}")
     else:
         print(f"  {BOLD}Final Score/Grade:{RESET} {BLUE}N/A (Data incomplete){RESET}")
 
     if result.interest_rate_pct is not None:
-        print(f"  {BOLD}Interest Rate:{RESET}     {YELLOW}{result.interest_rate_pct:.4f}%{RESET}")
+        print(f"  {BOLD}Interest Rate:{RESET}     {YELLOW}{result.interest_rate_pct:.4f}%{RESET}{provisional}")
         print(f"  {BOLD}Target Total Pay:{RESET}  {YELLOW}{result.target_payment_vnd:,.0f} VND{RESET}")
         print(f"  {BOLD}Target Daily Pay:{RESET}  {YELLOW}{result.target_daily_vnd:,.0f} VND{RESET}")
     else:
