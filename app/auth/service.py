@@ -1,6 +1,6 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from app.auth.schemas import (
     ResetPasswordRequest,
     UserCreate,
 )
+from app.lending.models import AuditLog
 from app.users.models import RefreshToken, User
 from app.utils.password import hash_password, verify_password
 from app.utils.jwt import (
@@ -60,7 +61,12 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
+async def create_token_pair(db: AsyncSession, user_id: UUID | str,
+    *,
+    session_id: UUID | None = None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> dict:
     """Issue an access/refresh JWT pair and persist the refresh token (hashed)
     in `refresh_tokens` so it can be looked up, revoked, and rotated.
 
@@ -79,19 +85,32 @@ async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
         data={"sub": str(uid), "typ": "refresh"},
         expires_delta=refresh_expires_delta,
     )
-    expires_at = datetime.now(timezone.utc) + refresh_expires_delta
+    now = datetime.now(timezone.utc)
+    expires_at = now + refresh_expires_delta
     db.add(
         RefreshToken(
             user_id=uid,
             token_hash=hash_refresh_token(refresh_token),
             expires_at=expires_at,
+            # A fresh sign-in starts a session; a rotation carries the existing
+            # one forward so the device does not look new after every refresh.
+            session_id=session_id or uuid4(),
+            user_agent=user_agent,
+            ip_address=ip_address,
+            last_used_at=now,
         )
     )
 
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
+async def refresh_token_pair(
+    db: AsyncSession,
+    refresh_token: str,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> dict:
     """Verify + rotate a refresh token (HANDOFF-02 Fix B: stateful, revocable).
 
     JWT signature/expiry is checked first (cheap, no DB hit for garbage
@@ -128,9 +147,19 @@ async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
         raise credentials_exception
 
     stored.revoked_at = now
+    stored.last_used_at = now
     db.add(stored)
 
-    return await create_token_pair(db, user_id)
+    # Same session, new token: the device keeps its identity on the security
+    # screen, and the metadata follows the latest request rather than the
+    # original sign-in (an IP can change mid-session).
+    return await create_token_pair(
+        db,
+        user_id,
+        session_id=stored.session_id,
+        user_agent=user_agent or stored.user_agent,
+        ip_address=ip_address or stored.ip_address,
+    )
 
 
 async def logout(db: AsyncSession, refresh_token: str | None) -> dict:
@@ -157,7 +186,13 @@ def _parse_user_id(user_id: str) -> UUID:
         raise HTTPException(status_code=400, detail="Invalid token details")
 
 
-async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]:
+async def login(
+    db: AsyncSession,
+    login_data: LoginRequest,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> tuple[User, dict]:
     verify_turnstile_token(login_data.turnstile_token)
 
     user = await authenticate_user(db, login_data.email, login_data.password)
@@ -166,9 +201,107 @@ async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
-    tokens = await create_token_pair(db, user.id)
+    tokens = await create_token_pair(
+        db, user.id, user_agent=user_agent, ip_address=ip_address
+    )
     await db.commit()
     return user, tokens
+
+
+async def list_sessions(
+    db: AsyncSession, user_id: UUID, *, current_token: str | None = None
+) -> list[dict]:
+    """Live sign-ins for a user, newest first.
+
+    One row per session: rotation revokes the previous row, so the unrevoked,
+    unexpired rows ARE the open sessions. The row matching the caller's own
+    refresh token is flagged so the UI can label it and refuse to revoke it.
+    """
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .order_by(RefreshToken.last_used_at.desc().nullslast())
+    )
+    rows = result.scalars().all()
+    current_hash = hash_refresh_token(current_token) if current_token else None
+
+    return [
+        {
+            "session_id": row.session_id,
+            "user_agent": row.user_agent,
+            "ip_address": row.ip_address,
+            "created_at": row.created_at,
+            "last_used_at": row.last_used_at,
+            "current": row.token_hash == current_hash,
+        }
+        for row in rows
+        # A pre-migration row has no session_id and cannot be addressed by the
+        # revoke endpoints, so listing it would offer an action that fails.
+        if row.session_id is not None
+    ]
+
+
+async def revoke_session(
+    db: AsyncSession, user_id: UUID, session_id: UUID, *, current_token: str | None
+) -> dict:
+    """Revoke every live token in one session — signing that device out.
+
+    Scoped to the caller's own user_id: a session id is a UUID, but it must
+    never be usable to sign out somebody else's device.
+    """
+    current_hash = hash_refresh_token(current_token) if current_token else None
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.session_id == session_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    rows = result.scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if current_hash is not None and any(r.token_hash == current_hash for r in rows):
+        # Signing out the device you are using is logout, not session
+        # management — different endpoint, and it also clears the cookies.
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot revoke the session you are signed in with; use logout",
+        )
+
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.revoked_at = now
+        db.add(row)
+    return {"revoked": len(rows)}
+
+
+async def revoke_other_sessions(
+    db: AsyncSession, user_id: UUID, *, current_token: str | None
+) -> dict:
+    """Sign out everywhere except here — the "I think someone else is in my
+    account" button. The caller's own session is deliberately spared."""
+    current_hash = hash_refresh_token(current_token) if current_token else None
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    now = datetime.now(timezone.utc)
+    revoked = 0
+    for row in result.scalars().all():
+        if current_hash is not None and row.token_hash == current_hash:
+            continue
+        row.revoked_at = now
+        db.add(row)
+        revoked += 1
+    return {"revoked": revoked}
 
 
 async def register_user(
@@ -311,3 +444,22 @@ async def reset_password(
     background_tasks.add_task(send_password_changed_notice, to_email=user.email)
 
     return {"status": "success", "message": "Password reset successfully"}
+
+
+async def list_security_events(db: AsyncSession, user_id: UUID, *, limit: int = 20):
+    """Recent security-relevant audit rows for one account, newest first.
+
+    Filtered to SESSION/AUTH entity types: the audit log also carries business
+    events (score runs, contracts) which belong on an admin trail, not on a
+    user's security screen.
+    """
+    result = await db.execute(
+        select(AuditLog)
+        .where(
+            AuditLog.actor_id == user_id,
+            AuditLog.entity_type.in_(("SESSION", "AUTH")),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()

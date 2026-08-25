@@ -46,4 +46,15 @@ class RefreshToken(Base):
     revoked_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # One sign-in, stable across rotation. Refreshing revokes this row and
+    # inserts a new one, so without this a "signed-in device" would appear to
+    # be a different device after every refresh. Nullable: rows issued before
+    # migration a3f7c92e1b48 have none.
+    session_id = Column(UUID(as_uuid=True), index=True)
+    # Captured at sign-in and refreshed on use, so the security screen can
+    # describe the device a user is deciding whether to revoke.
+    user_agent = Column(Text)
+    ip_address = Column(Text)
+    last_used_at = Column(DateTime(timezone=True))
+
     user = relationship("User", back_populates="refresh_tokens")

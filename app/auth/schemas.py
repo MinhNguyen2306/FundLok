@@ -1,5 +1,6 @@
 import re
 
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
 
@@ -109,3 +110,31 @@ class ResetPasswordRequest(BaseModel):
             raise ValueError("Password too long for bcrypt")
         return v
 
+
+
+class SessionOut(BaseModel):
+    """One live sign-in, as the security screen renders it.
+
+    `device` and `browser` are parsed from the stored user agent rather than
+    stored separately: the UA string is the raw fact, the split is presentation
+    and can be improved without a migration.
+    """
+
+    session_id: UUID
+    device: str
+    browser: str
+    ip_address: str | None
+    created_at: datetime | None
+    last_used_at: datetime | None
+    current: bool
+
+
+class SecurityEventOut(BaseModel):
+    """An entry in the account's security history, from `audit_logs`."""
+
+    id: UUID
+    action: str
+    entity_type: str
+    severity: str
+    ip_address: str | None
+    created_at: datetime | None

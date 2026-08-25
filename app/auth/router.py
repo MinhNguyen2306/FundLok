@@ -2,6 +2,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from typing import List
+from uuid import UUID
+
 from app.auth.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -9,11 +12,17 @@ from app.auth.schemas import (
     ResendVerificationRequest,
     RegisterResponse,
     ResetPasswordRequest,
+    SecurityEventOut,
+    SessionOut,
     Token,
     UserCreate,
     UserOut,
 )
 from app.auth import service
+from app.auth.user_agent import describe_browser, describe_device
+from app.users.models import User
+from app.utils.audit import append_audit
+from app.utils.jwt import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -66,8 +75,29 @@ def _set_auth_cookies(response: Response, tokens: dict, *, remember: bool) -> No
 
 
 @router.post("/login", response_model=UserOut)
-async def simple_login(response: Response, login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user, tokens = await service.login(db, login_data)
+async def simple_login(
+    request: Request,
+    response: Response,
+    login_data: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+    user, tokens = await service.login(
+        db, login_data, user_agent=user_agent, ip_address=ip_address
+    )
+    # Security history: the sign-in itself is the event a user scans for when
+    # they suspect someone else is in the account.
+    append_audit(
+        db,
+        entity_type="SESSION",
+        entity_id=user.id,
+        action="SIGN_IN",
+        actor_id=user.id,
+        after_state={"user_agent": user_agent},
+        ip_address=ip_address,
+    )
+    await db.commit()
     _set_auth_cookies(response, tokens, remember=login_data.remember_me)
     return user
 
@@ -96,7 +126,12 @@ async def refresh_tokens(request: Request, response: Response, body: RefreshRequ
             detail="Refresh token missing",
         )
 
-    tokens = await service.refresh_token_pair(db, refresh_token)
+    tokens = await service.refresh_token_pair(
+        db,
+        refresh_token,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
     await db.commit()
     # Preserve the login-time choice: the marker cookie is the only thing that
     # survives to tell us, since the request carries no body flag here.
@@ -131,3 +166,121 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     return await service.reset_password(db, body, background_tasks)
+
+
+@router.get("/sessions", response_model=List[SessionOut])
+async def list_sessions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Devices currently signed in to this account.
+
+    Backed by `refresh_tokens`: an unrevoked, unexpired row is a live sign-in.
+    The caller's own session is flagged rather than hidden, so the UI can label
+    it "this device" and disable its revoke button.
+    """
+    sessions = await service.list_sessions(
+        db, current_user.id, current_token=request.cookies.get("refresh_token")
+    )
+    return [
+        SessionOut(
+            session_id=item["session_id"],
+            device=describe_device(item["user_agent"]),
+            browser=describe_browser(item["user_agent"]),
+            ip_address=item["ip_address"],
+            created_at=item["created_at"],
+            last_used_at=item["last_used_at"],
+            current=item["current"],
+        )
+        for item in sessions
+    ]
+
+
+@router.post("/sessions/{session_id}/revoke")
+async def revoke_session(
+    session_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sign one device out. Scoped to the caller's own sessions."""
+    result = await service.revoke_session(
+        db,
+        current_user.id,
+        session_id,
+        current_token=request.cookies.get("refresh_token"),
+    )
+    append_audit(
+        db,
+        entity_type="SESSION",
+        entity_id=current_user.id,
+        action="SESSION_REVOKED",
+        actor_id=current_user.id,
+        after_state={"session_id": str(session_id)},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/sessions/revoke-others")
+async def revoke_other_sessions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sign out everywhere except the device making this call."""
+    result = await service.revoke_other_sessions(
+        db, current_user.id, current_token=request.cookies.get("refresh_token")
+    )
+    append_audit(
+        db,
+        entity_type="SESSION",
+        entity_id=current_user.id,
+        action="SESSIONS_REVOKED_OTHERS",
+        actor_id=current_user.id,
+        after_state=result,
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return result
+
+
+# How loudly the security screen should present each action. Anything not listed
+# is routine — a new audited action shows up as information rather than
+# silently becoming an alarm.
+_EVENT_SEVERITY = {
+    "SIGN_IN_FAILED": "critical",
+    "SESSION_REVOKED": "warning",
+    "SESSIONS_REVOKED_OTHERS": "warning",
+    "PASSWORD_RESET": "warning",
+}
+
+
+@router.get("/security-events", response_model=List[SecurityEventOut])
+async def list_security_events(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """This account's recent security history, newest first.
+
+    Read from `audit_logs` filtered to the caller as actor. It is deliberately
+    not every audit row for the user's entities — a project edit is not
+    security history — so only SESSION and AUTH entity types are returned.
+    """
+    rows = await service.list_security_events(
+        db, current_user.id, limit=min(max(limit, 1), 100)
+    )
+    return [
+        SecurityEventOut(
+            id=row.id,
+            action=row.action,
+            entity_type=row.entity_type,
+            severity=_EVENT_SEVERITY.get(row.action, "info"),
+            ip_address=row.ip_address,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
