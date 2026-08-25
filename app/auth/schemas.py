@@ -70,6 +70,9 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     turnstile_token: str | None = None
+    # "Keep me signed in". Defaults to False: a client that does not send it
+    # gets session cookies, which is the safer of the two behaviours.
+    remember_me: bool = False
 
 
 class Token(BaseModel):
