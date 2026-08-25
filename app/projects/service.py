@@ -22,8 +22,15 @@ async def create_project(
             detail="Only SMEs can create projects",
         )
     try:
+        # employee_count / company_size are validated (and company_size derived)
+        # on the way in, but `projects` has no column for either yet, so they
+        # cannot be passed to the model. Adding the columns is a shared-model
+        # change — see docs/specs/underwriting/grading-input-sources.md §3.3.
         new_project = Project(
-            **project_data.model_dump(exclude={"loan_application"}), status="DRAFT"
+            **project_data.model_dump(
+                exclude={"loan_application", "employee_count", "company_size"}
+            ),
+            status="DRAFT",
         )
         db.add(new_project)
         await db.flush()
