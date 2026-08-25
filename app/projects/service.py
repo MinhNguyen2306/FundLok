@@ -126,5 +126,17 @@ async def display_projects(db: AsyncSession, current_user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only investors can view projects",
         )
-    result = await db.execute(select(Project).where(Project.status == "ACTIVE"))
+    # The investor marketplace card shows the deal terms (asking amount), not
+    # just the company, so the application rides along. Eager-loaded for the
+    # same reason as get_my_projects: a lazy load during response serialisation
+    # raises MissingGreenlet on an AsyncSession.
+    result = await db.execute(
+        select(Project)
+        .where(Project.status == "ACTIVE")
+        .options(
+            selectinload(Project.loan_applications).selectinload(
+                LoanApplication.documents
+            )
+        )
+    )
     return result.scalars().all()

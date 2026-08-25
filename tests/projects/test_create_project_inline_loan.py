@@ -97,3 +97,58 @@ async def test_create_project_without_loan_application_still_works(
 
     assert resp.status_code == 201, resp.text
     assert resp.json()["loan_application"] is None
+
+
+async def test_public_listing_carries_the_loan_terms(client, make_user, db_session):
+    """FE-008: the marketplace card shows the asking amount, so the public
+    listing has to carry the application — otherwise an investor must open every
+    project to find out what the deal is."""
+    from sqlalchemy import select
+
+    from app.lending.models import Project
+
+    sme = await make_user(role="SME")
+    created = await client.post("/projects", json=_payload(), headers=auth_headers(sme))
+    assert created.status_code == 201, created.text
+    project_id = created.json()["id"]
+
+    # Only ACTIVE projects are listed; creation leaves them DRAFT.
+    row = (
+        await db_session.execute(select(Project).where(Project.id == project_id))
+    ).scalar_one()
+    row.status = "ACTIVE"
+    await db_session.commit()
+
+    investor = await make_user(role="INVESTOR")
+    listed = await client.get("/projects/public", headers=auth_headers(investor))
+    assert listed.status_code == 200, listed.text
+
+    match = next(p for p in listed.json() if p["id"] == project_id)
+    assert match["loan_application"] is not None
+    assert match["loan_application"]["requested_amount"] == "800000000.00"
+    assert match["loan_application"]["documents"] == []
+
+
+async def test_public_listing_without_an_application_returns_null(
+    client, make_user, db_session
+):
+    from sqlalchemy import select
+
+    from app.lending.models import Project
+
+    sme = await make_user(role="SME")
+    payload = _payload()
+    payload.pop("loan_application")
+    created = await client.post("/projects", json=payload, headers=auth_headers(sme))
+    project_id = created.json()["id"]
+
+    row = (
+        await db_session.execute(select(Project).where(Project.id == project_id))
+    ).scalar_one()
+    row.status = "ACTIVE"
+    await db_session.commit()
+
+    investor = await make_user(role="INVESTOR")
+    listed = await client.get("/projects/public", headers=auth_headers(investor))
+    match = next(p for p in listed.json() if p["id"] == project_id)
+    assert match["loan_application"] is None
