@@ -28,6 +28,9 @@ class User(Base):
     role = Column(Text, nullable=True)  # null until the user selects a role post-registration
     email_verified = Column(Boolean, nullable=False, server_default="false")
     status = Column(Text, nullable=False, server_default="ACTIVE")
+    # Email the owner when a device we have not seen before signs in. Opt-in:
+    # see migration b8d41c60ea92.
+    signin_alerts_enabled = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     project_ownerships = relationship("ProjectOwnership", back_populates="user")

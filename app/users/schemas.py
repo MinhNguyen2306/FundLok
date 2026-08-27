@@ -130,3 +130,31 @@ class UserUpdateRequest(BaseModel):
                 "phone must match +84/84/0 Vietnamese format or an international E.164 number"
             )
         return normalized
+
+class ChangePasswordRequest(BaseModel):
+    """Change an existing password from an authenticated session.
+
+    `current_password` is what makes this safe to serve off a session alone.
+    /me/password (set-password) deliberately refuses accounts that already have
+    one, because overwriting a password from a borrowed session would be
+    account takeover; proving knowledge of the current password is the standard
+    answer to exactly that, so it is required here and not optional.
+    """
+
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _strong_enough(cls, value: str) -> str:
+        if len(value) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        return value
+
+
+class SecurityPreferencesOut(BaseModel):
+    signin_alerts_enabled: bool
+
+
+class SecurityPreferencesUpdate(BaseModel):
+    signin_alerts_enabled: bool

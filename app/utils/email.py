@@ -357,3 +357,55 @@ def send_existing_account_notice(to_email: str) -> None:
         html_content=html_content,
         text_content=text_content,
     )
+
+
+def send_new_device_signin_alert(
+    to_email: str, *, device: str, browser: str, ip_address: str | None
+) -> None:
+    """Tell the owner a device we have not seen before just signed in.
+
+    Same contract as send_password_changed_notice: a notification, no token, no
+    action it can be tricked into performing. Its job is to make an
+    unauthorised sign-in visible while the owner can still act, so it names the
+    two things they would do next -- change the password, or sign the device out
+    from the security screen.
+
+    Sent only when the account has sign-in alerts switched on
+    (users.signin_alerts_enabled), and only for an unrecognised device: mailing
+    on every sign-in trains people to ignore it.
+    """
+    security_link = f"{settings.FRONTEND_URL}/dashboard/security"
+    reset_link = f"{settings.FRONTEND_URL}/forgot-password"
+    where = ip_address or "an unknown address"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="font-family: 'Helvetica Neue', Arial, sans-serif; background:#f4f7f6; margin:0; padding:20px;">
+      <div style="max-width:600px;margin:40px auto;background:#fff;padding:40px;border-radius:12px;">
+        <h1 style="font-size:22px;color:#111;margin:0 0 16px;">New sign-in to your FundLok account</h1>
+        <p style="color:#444;line-height:1.6;">
+          Someone signed in from <strong>{browser} on {device}</strong> ({where}).
+          If that was you, nothing more is needed.
+        </p>
+        <p style="color:#444;line-height:1.6;">
+          If it was not you, sign that device out and change your password now:
+        </p>
+        <p style="margin:24px 0;">
+          <a href="{security_link}" style="background:#0f766e;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;">Review signed-in devices</a>
+        </p>
+        <p style="color:#666;font-size:13px;line-height:1.6;">
+          You can also <a href="{reset_link}">reset your password</a>. This email was sent
+          because sign-in alerts are switched on for your account.
+        </p>
+      </div>
+    </body>
+    </html>
+    """
+
+    send_email(
+        to_email=to_email,
+        subject="New sign-in to your FundLok account",
+        html_content=html_content,
+    )

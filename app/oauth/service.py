@@ -1,12 +1,14 @@
 from abc import ABC, abstractmethod
 
 import httpx
-from fastapi import HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, status
 from jose import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.service import create_token_pair
+from app.auth.service import create_token_pair, is_unseen_device
+from app.auth.user_agent import describe_browser, describe_device
+from app.utils.email import send_new_device_signin_alert
 from app.core.config import settings
 from app.oauth.schema import OAuthProvider, OAuthUserInfo
 from app.users.models import User
@@ -21,13 +23,47 @@ class OAuthProviderBase(ABC):
     def __init__(self, client_id: str | None):
         self.client_id = client_id
 
-    async def login(self, db: AsyncSession, token: str) -> dict:
+    async def login(
+        self,
+        db: AsyncSession,
+        token: str,
+        *,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> tuple[User, dict, bool]:
+        """Sign in with a provider ID token.
+
+        Returns (user, tokens, is_new_device). The extra two exist because a
+        social sign-in is a sign-in: it has to record the device on the session
+        and be visible in the account's security history, exactly like the
+        password path. Before this, Google sign-ins produced sessions with no
+        user agent ("Unknown device" on the security screen), never appeared in
+        recent activity, and never triggered a new-device alert.
+        """
         claims = self.verify_token(token)
         user_info = self.map_claims(claims)
         user = await self.get_or_create_user(db, user_info)
-        tokens = await create_token_pair(db, user.id)
+
+        # Asked before the new session row exists, or the sign-in being
+        # recorded would count as its own prior history.
+        is_new_device = await is_unseen_device(db, user.id, user_agent)
+
+        tokens = await create_token_pair(
+            db, user.id, user_agent=user_agent, ip_address=ip_address
+        )
         await db.commit()
-        return tokens
+
+        if is_new_device and user.signin_alerts_enabled and background_tasks is not None:
+            background_tasks.add_task(
+                send_new_device_signin_alert,
+                user.email,
+                device=describe_device(user_agent),
+                browser=describe_browser(user_agent),
+                ip_address=ip_address,
+            )
+
+        return user, tokens, is_new_device
 
     def verify_token(self, token: str) -> dict:
         return self.verify_id_token(token)
@@ -223,11 +259,25 @@ class OAuthService:
             OAuthProvider.MICROSOFT: MicrosoftOAuthProvider(settings.MICROSOFT_CLIENT_ID),
         }
 
-    async def login(self, provider: OAuthProvider, token: str) -> dict:
+    async def login(
+        self,
+        provider: OAuthProvider,
+        token: str,
+        *,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> tuple[User, dict, bool]:
         oauth_provider = self.providers.get(provider)
         if oauth_provider is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unsupported OAuth provider",
             )
-        return await oauth_provider.login(self.db, token)
+        return await oauth_provider.login(
+            self.db,
+            token,
+            user_agent=user_agent,
+            ip_address=ip_address,
+            background_tasks=background_tasks,
+        )

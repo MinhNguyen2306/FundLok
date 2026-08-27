@@ -79,12 +79,17 @@ async def simple_login(
     request: Request,
     response: Response,
     login_data: LoginRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     user_agent = request.headers.get("user-agent")
     ip_address = request.client.host if request.client else None
     user, tokens = await service.login(
-        db, login_data, user_agent=user_agent, ip_address=ip_address
+        db,
+        login_data,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        background_tasks=background_tasks,
     )
     # Security history: the sign-in itself is the event a user scans for when
     # they suspect someone else is in the account.

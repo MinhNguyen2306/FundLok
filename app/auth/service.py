@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
 
+from app.auth.user_agent import describe_browser, describe_device
+from app.utils.email import send_new_device_signin_alert
 from app.auth.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -192,6 +194,7 @@ async def login(
     *,
     user_agent: str | None = None,
     ip_address: str | None = None,
+    background_tasks: BackgroundTasks | None = None,
 ) -> tuple[User, dict]:
     verify_turnstile_token(login_data.turnstile_token)
 
@@ -201,11 +204,53 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    # "Have we seen this device before?" is asked BEFORE the new session row is
+    # written, otherwise the sign-in we are about to record would itself count
+    # as prior history and no device would ever look new.
+    is_new_device = await is_unseen_device(db, user.id, user_agent)
+
     tokens = await create_token_pair(
         db, user.id, user_agent=user_agent, ip_address=ip_address
     )
     await db.commit()
+
+    if is_new_device and user.signin_alerts_enabled and background_tasks is not None:
+        # After the commit: the alert describes a sign-in that actually
+        # happened. Queued rather than awaited so a slow mail server cannot
+        # make signing in feel broken.
+        background_tasks.add_task(
+            send_new_device_signin_alert,
+            user.email,
+            device=describe_device(user_agent),
+            browser=describe_browser(user_agent),
+            ip_address=ip_address,
+        )
+
     return user, tokens
+
+
+async def is_unseen_device(
+    db: AsyncSession, user_id: UUID, user_agent: str | None
+) -> bool:
+    """Whether this user agent has never signed in to this account before.
+
+    Deliberately a user-agent match, not a fingerprint: it is the only signal
+    stored, it is stable for a given browser on a given machine, and the cost of
+    a false "new device" is one extra email rather than a missed warning. An
+    absent user agent is treated as NOT new -- an unknown client would otherwise
+    alert on every single sign-in.
+    """
+    if not user_agent:
+        return False
+    result = await db.execute(
+        select(RefreshToken.id)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.user_agent == user_agent,
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is None
 
 
 async def list_sessions(

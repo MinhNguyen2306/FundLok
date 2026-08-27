@@ -11,7 +11,14 @@ from app.users.schemas import (
     SetPasswordRequest,
     UserUpdateRequest,
 )
+from app.users.schemas import (
+    ChangePasswordRequest,
+    SecurityPreferencesOut,
+    SecurityPreferencesUpdate,
+)
 from app.users.service import (
+    change_password,
+    update_security_preferences,
     confirm_avatar,
     create_avatar_presign,
     select_user_role,
@@ -146,3 +153,73 @@ async def confirm_avatar_upload(
     )
     await db.commit()
     return user_me_payload(user)
+
+
+@router.post("/me/password/change", status_code=200)
+async def change_current_user_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change an existing password.
+
+    Separate from /me/password (which only sets a FIRST password) because the
+    safety argument is different: this one is served off a session, so it
+    requires the current password as proof the session is not borrowed. Every
+    other session is revoked as part of the change -- see change_password.
+    """
+    revoked = await change_password(db, body, current_user, background_tasks)
+    append_audit(
+        db,
+        entity_type="AUTH",
+        entity_id=current_user.id,
+        action="PASSWORD_CHANGED",
+        actor_id=current_user.id,
+        after_state={"sessions_revoked": revoked},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return {"status": "success", "sessions_revoked": revoked}
+
+
+@router.get("/me/security-preferences", response_model=SecurityPreferencesOut)
+async def get_security_preferences(
+    current_user: User = Depends(get_current_user),
+):
+    return SecurityPreferencesOut(
+        signin_alerts_enabled=bool(current_user.signin_alerts_enabled)
+    )
+
+
+@router.patch("/me/security-preferences", response_model=SecurityPreferencesOut)
+async def patch_security_preferences(
+    body: SecurityPreferencesUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle sign-in alerts.
+
+    Audited: switching alerts OFF is exactly what someone who has taken over an
+    account would do, so the change itself belongs in the security history.
+    """
+    before = bool(current_user.signin_alerts_enabled)
+    user = await update_security_preferences(
+        db, current_user, signin_alerts_enabled=body.signin_alerts_enabled
+    )
+    append_audit(
+        db,
+        entity_type="AUTH",
+        entity_id=user.id,
+        action="SIGNIN_ALERTS_CHANGED",
+        actor_id=user.id,
+        before_state={"signin_alerts_enabled": before},
+        after_state={"signin_alerts_enabled": bool(user.signin_alerts_enabled)},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return SecurityPreferencesOut(
+        signin_alerts_enabled=bool(user.signin_alerts_enabled)
+    )
