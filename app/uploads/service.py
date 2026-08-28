@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -16,6 +17,7 @@ from app.uploads.schemas import (
     FilePresignRequest,
     UploadConfirmRequest,
     UploadPresignRequest,
+    safe_object_filename,
 )
 from app.users.models import Role, User
 from app.utils.r2 import delete_object, head_object, presign_put
@@ -176,7 +178,13 @@ async def create_file_presign(
     if current_user.role == Role.SME.value and not await user_owns_project(db, current_user.id, body.business_id):
         raise HTTPException(status_code=403, detail="Business does not belong to this user")
 
-    storage_key = f"fundlok/{body.business_id}/{uuid.uuid4()}/{body.filename}"
+    # The filename is sanitised on the way into the key (path separators, URL
+    # metacharacters and control characters all collapse), while `Document`
+    # below keeps the value the user actually sent, for display.
+    storage_key = (
+        f"fundlok/{body.business_id}/{uuid.uuid4()}/"
+        f"{safe_object_filename(body.filename)}"
+    )
     doc = Document(
         entity_type="PROJECT",
         entity_id=body.business_id,
@@ -188,7 +196,12 @@ async def create_file_presign(
     )
     db.add(doc)
     await db.flush()
-    upload_url = f"{settings.MOCK_UPLOAD_BASE_URL.rstrip('/')}/{doc.id}?key={storage_key}"
+    # quote() the key: it is a path-shaped value going into a query parameter,
+    # so an unencoded "/" or "&" would split or truncate it.
+    upload_url = (
+        f"{settings.MOCK_UPLOAD_BASE_URL.rstrip('/')}/{doc.id}"
+        f"?key={quote(storage_key, safe='')}"
+    )
     return doc, upload_url
 
 

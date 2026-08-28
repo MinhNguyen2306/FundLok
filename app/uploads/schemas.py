@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from uuid import UUID
 
@@ -86,7 +87,11 @@ FILE_MAX_SIZE_BYTES = 25 * MB
 class FilePresignRequest(BaseModel):
     business_id: UUID
     purpose: str
-    filename: str
+    # Bounded like UploadPresignRequest.filename above. Stored as given so the
+    # UI can show the user their own filename; it is `safe_object_filename`d on
+    # the way into the object key, which is where an unbounded raw value did
+    # real damage. See that function for what and why.
+    filename: str = Field(min_length=1, max_length=255)
     mime_type: str
 
     @field_validator("mime_type")
@@ -95,6 +100,46 @@ class FilePresignRequest(BaseModel):
         if v not in FILE_ALLOWED_MIME:
             raise ValueError("mime_type not allowed")
         return v
+
+
+# Characters allowed to survive into an object key. Everything else — path
+# separators, control characters, URL metacharacters, non-ASCII — collapses to
+# an underscore.
+_SAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def safe_object_filename(raw: str) -> str:
+    """Reduce a client filename to something safe to put in an object key.
+
+    The generic presign builds its key as
+    `fundlok/{business_id}/{uuid4}/{filename}` and then interpolates that key
+    into a URL. A raw client value there is wrong on three counts:
+
+    * `..` and `/` segments. S3/R2 treat keys as opaque strings so there is no
+      filesystem traversal, but an HTTP client normalising `..` in the URL path
+      before sending signs one key and writes another — at best a broken
+      upload, at worst an object landing outside the intended prefix.
+    * URL metacharacters (`?`, `#`, `&`, spaces) silently truncate or split the
+      `?key=` query parameter the upload URL is built from.
+    * Control characters, including CR/LF, which have no business in a key that
+      may end up in a header or a log line.
+
+    Keeping a readable, sanitised name is deliberate: the uuid4 segment already
+    guarantees uniqueness, so the filename is only ever a human hint. The
+    original, unmodified value is still stored in `Document.filename` for
+    display — sanitising is about what reaches the KEY, not about losing the
+    user's filename.
+    """
+    # Basename only: strip both separators, since a Windows client sends "\".
+    name = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    name = _SAFE_FILENAME_CHARS.sub("_", name)
+    # A name that was entirely separators/dots ("..", "/", "") leaves nothing
+    # usable; the uuid4 segment carries the identity, so a constant is fine.
+    name = name.lstrip(".") or "upload"
+    # Belt and braces: the 255 bound above applies to the raw input, and
+    # sanitising never lengthens a name, but keep the key segment bounded
+    # regardless of how this is called.
+    return name[:255]
 
 
 class FilePresignResponse(BaseModel):
