@@ -1,27 +1,22 @@
 import re
 
-from pydantic import EmailStr, BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
-from uuid import UUID
 from app.auth.schemas import PHONE_NUMBER_PATTERN
 from app.users.models import Role
 
-class UserCreate(BaseModel):
-    """Schema for user registration (FE to BE)"""
-    email: EmailStr
-    password: str = Field(..., min_length=8)
-    phone: Optional[str] = None
-    role: Role
-
-class UserResponse(BaseModel):
-    """Schema for public user profile (BE to FE)"""
-    id: UUID
-    email: EmailStr
-    role: Role
-    status: str
-
-    class Config:
-        from_attributes = True
+# NOTE: there is deliberately no UserCreate / registration schema here.
+#
+# Registration binds app.auth.schemas.UserCreate, which has NO `role` field —
+# new accounts are created without one and pick SME or INVESTOR later through
+# PATCH /users/me/role, where RoleSelectRequest below restricts the choice.
+#
+# An unused `UserCreate` with a `role: Role` field used to sit at this spot. It
+# was reachable from nothing, but any future endpoint bound to it would have let
+# a registrant name their own role — including ADMIN and SYSTEM_ADMIN — so it
+# was removed rather than left as a trap. A `UserResponse` that exposed `role`
+# and `status` went with it; /users/me answers from
+# app.users.service.user_me_payload instead.
 
 
 # Roles a user may assign to themselves after registration. Privileged roles
