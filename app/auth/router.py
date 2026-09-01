@@ -2,10 +2,17 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from typing import List
+from typing import List, Union
 from uuid import UUID
 
 from app.auth.schemas import (
+    TotpChallengeOut,
+    TotpDisableRequest,
+    TotpEnableOut,
+    TotpEnableRequest,
+    TotpLoginRequest,
+    TotpSetupOut,
+    TotpStatusOut,
     ForgotPasswordRequest,
     LoginRequest,
     RefreshRequest,
@@ -74,7 +81,7 @@ def _set_auth_cookies(response: Response, tokens: dict, *, remember: bool) -> No
         response.delete_cookie(key=REMEMBER_COOKIE, httponly=True, samesite="lax")
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/login", response_model=Union[TotpChallengeOut, UserOut])
 async def simple_login(
     request: Request,
     response: Response,
@@ -91,6 +98,12 @@ async def simple_login(
         ip_address=ip_address,
         background_tasks=background_tasks,
     )
+    # 2FA pending: no cookies, no SIGN_IN audit — nobody is signed in yet. The
+    # event is recorded in the second step, so the security history never shows
+    # a sign-in that was abandoned at the code prompt.
+    if tokens.get("totp_required"):
+        return TotpChallengeOut(challenge_token=tokens["challenge_token"])
+
     # Security history: the sign-in itself is the event a user scans for when
     # they suspect someone else is in the account.
     append_audit(
@@ -105,6 +118,114 @@ async def simple_login(
     await db.commit()
     _set_auth_cookies(response, tokens, remember=login_data.remember_me)
     return user
+
+
+@router.post("/login/2fa", response_model=UserOut)
+async def complete_two_factor_login(
+    request: Request,
+    response: Response,
+    body: TotpLoginRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Second half of a 2FA sign-in: challenge token + code -> session.
+
+    Deliberately reachable without a session — the caller has no session yet,
+    that is the point. The challenge token is the credential, it expires in five
+    minutes, and it cannot be used as a session itself (get_current_user rejects
+    purpose-scoped tokens).
+    """
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+    user, tokens = await service.complete_totp_login(
+        db,
+        body.challenge_token,
+        body.code,
+        user_agent=user_agent,
+        ip_address=ip_address,
+        background_tasks=background_tasks,
+    )
+    append_audit(
+        db,
+        entity_type="SESSION",
+        entity_id=user.id,
+        action="SIGN_IN",
+        actor_id=user.id,
+        after_state={"user_agent": user_agent, "second_factor": "TOTP"},
+        ip_address=ip_address,
+    )
+    await db.commit()
+    _set_auth_cookies(response, tokens, remember=body.remember_me)
+    return user
+
+
+# --- 2FA enrolment (authenticated) ----------------------------------------- #
+
+
+@router.get("/2fa", response_model=TotpStatusOut)
+async def two_factor_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return TotpStatusOut(
+        enabled=bool(current_user.totp_enabled),
+        confirmed_at=current_user.totp_confirmed_at,
+        recovery_codes_remaining=await service.count_unused_recovery_codes(
+            db, current_user.id
+        ),
+    )
+
+
+@router.post("/2fa/setup", response_model=TotpSetupOut, status_code=status.HTTP_201_CREATED)
+async def start_two_factor_setup(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    secret, uri = await service.start_totp_setup(db, current_user)
+    await db.commit()
+    return TotpSetupOut(secret=secret, provisioning_uri=uri)
+
+
+@router.post("/2fa/enable", response_model=TotpEnableOut)
+async def enable_two_factor(
+    request: Request,
+    body: TotpEnableRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    codes = await service.enable_totp(db, current_user, body.code)
+    append_audit(
+        db,
+        entity_type="USER",
+        entity_id=current_user.id,
+        action="TOTP_ENABLED",
+        actor_id=current_user.id,
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return TotpEnableOut(enabled=True, recovery_codes=codes)
+
+
+@router.post("/2fa/disable", response_model=TotpStatusOut)
+async def disable_two_factor(
+    request: Request,
+    body: TotpDisableRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await service.disable_totp(db, current_user, body.password, body.code)
+    append_audit(
+        db,
+        entity_type="USER",
+        entity_id=current_user.id,
+        action="TOTP_DISABLED",
+        actor_id=current_user.id,
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return TotpStatusOut(
+        enabled=False, confirmed_at=None, recovery_codes_remaining=0
+    )
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)

@@ -67,6 +67,35 @@ async def get_current_user(
             algorithms=[settings.ALGORITHM],
             options={"verify_aud": False},
         )
+        # A session may only be established by an ACCESS token.
+        #
+        # Every purpose-scoped token in this codebase is minted by
+        # create_access_token with the same secret and algorithm, differing only
+        # by a claim: `purpose` for email verification (24h, arrives in an email
+        # URL), password reset (1h, likewise), and the TOTP login challenge; and
+        # `typ: "refresh"` for refresh tokens (14 days, rotated and revocable in
+        # `refresh_tokens`).
+        #
+        # Each consumer checks its own claim, but this function is what every
+        # authenticated endpoint depends on, and without the two checks below it
+        # accepted all of them as a full session. Concretely that meant:
+        #
+        #   * a revoked refresh token kept working for up to 14 days when sent
+        #     as a bearer token, because nothing here consults refresh_tokens —
+        #     silently defeating "sign out everywhere else" and the revocation
+        #     that a password change performs;
+        #   * a password-reset link, a credential deliberately delivered over
+        #     email, doubled as an API session for an hour;
+        #   * and the TOTP challenge token below would have been a complete
+        #     session on its own, making two-factor auth decorative.
+        #
+        # Access tokens set neither claim, so rejecting their presence is
+        # backward compatible with tokens already in flight.
+        if payload.get("purpose") is not None:
+            raise credentials_exception
+        if payload.get("typ") not in (None, "access"):
+            raise credentials_exception
+
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
