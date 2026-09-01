@@ -59,6 +59,7 @@ pydantic[email]==2.13.4
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.5.0
 argon2-cffi==25.1.0   # the active scheme; see app/utils/password.py (bcrypt 72-byte limit)
+pyotp==2.10.0         # TOTP second factor (app/auth/totp.py); RFC 6238, no network calls
 
 # ── Migrations, mail, storage ────────────────────────────────────────────────
 alembic==1.18.5          # CAPPED — see the header before bumping

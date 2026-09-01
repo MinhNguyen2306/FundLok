@@ -1,7 +1,9 @@
 import re
 
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 
 
@@ -138,3 +140,60 @@ class SecurityEventOut(BaseModel):
     severity: str
     ip_address: str | None
     created_at: datetime | None
+
+
+# --- Two-factor authentication (TOTP) --------------------------------------- #
+
+
+class TotpChallengeOut(BaseModel):
+    """Returned by POST /auth/login when the account has 2FA enabled.
+
+    Carries no session: the caller must exchange `challenge_token` plus a code
+    at POST /auth/login/2fa. `totp_required` is a Literal so this can sit in a
+    union with UserOut without either shape being ambiguous.
+    """
+
+    totp_required: Literal[True] = True
+    challenge_token: str
+
+
+class TotpLoginRequest(BaseModel):
+    challenge_token: str
+    code: str = Field(min_length=1, max_length=64)
+    # Carried over from step one: the challenge token is not the place for a UI
+    # preference, and the client already knows what the user ticked.
+    remember_me: bool = False
+
+
+class TotpSetupOut(BaseModel):
+    """The one and only time the secret leaves the server."""
+
+    secret: str
+    provisioning_uri: str
+
+
+class TotpEnableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
+
+
+class TotpEnableOut(BaseModel):
+    """Recovery codes are returned exactly once, at enrolment.
+
+    They are stored hashed, so there is no endpoint that can show them again —
+    losing them means regenerating, which is deliberate.
+    """
+
+    enabled: bool
+    recovery_codes: list[str]
+
+
+class TotpDisableRequest(BaseModel):
+    password: str
+    # A live code or a recovery code; the service accepts either.
+    code: str = Field(min_length=1, max_length=64)
+
+
+class TotpStatusOut(BaseModel):
+    enabled: bool
+    confirmed_at: datetime | None = None
+    recovery_codes_remaining: int

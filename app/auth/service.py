@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
 
+from app.auth import totp, totp_crypto
 from app.auth.user_agent import describe_browser, describe_device
 from app.utils.email import send_new_device_signin_alert
 from app.auth.schemas import (
@@ -17,7 +18,7 @@ from app.auth.schemas import (
     UserCreate,
 )
 from app.lending.models import AuditLog
-from app.users.models import RefreshToken, User
+from app.users.models import RefreshToken, TotpRecoveryCode, User
 from app.utils.password import hash_password, verify_password
 from app.utils.jwt import (
     create_access_token,
@@ -204,6 +205,14 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    # Second factor, if the account has one. Nothing is issued here: no access
+    # token, no refresh token, no session row — only a short-lived challenge the
+    # caller must trade for tokens by proving possession of a code. Returning
+    # tokens now and "requiring" the code afterwards would make 2FA cosmetic,
+    # since the tokens would already work.
+    if user.totp_enabled:
+        return user, {"totp_required": True, "challenge_token": totp.create_challenge_token(user.id)}
+
     # "Have we seen this device before?" is asked BEFORE the new session row is
     # written, otherwise the sign-in we are about to record would itself count
     # as prior history and no device would ever look new.
@@ -508,3 +517,217 @@ async def list_security_events(db: AsyncSession, user_id: UUID, *, limit: int = 
         .limit(limit)
     )
     return result.scalars().all()
+
+
+# --------------------------------------------------------------------------- #
+# Two-factor authentication (TOTP)
+#
+# Enrolment is deliberately three steps rather than one:
+#
+#   setup   mint a secret, return the otpauth:// URI. Nothing is enabled yet, so
+#           an abandoned setup cannot lock anyone out.
+#   enable  prove possession with a live code. Only now does totp_enabled flip,
+#           and the recovery codes are generated and shown exactly once.
+#   disable requires the current password AND a live code (or a recovery code) —
+#           a borrowed session must not be able to strip the account's second
+#           factor, which is the whole point of having one.
+# --------------------------------------------------------------------------- #
+
+
+async def start_totp_setup(db: AsyncSession, current_user: User) -> tuple[str, str]:
+    """Mint (or re-mint) a secret and return (secret, provisioning_uri).
+
+    Re-running setup on an account that has not finished enrolling issues a
+    FRESH secret: the previous one may have been half-scanned into an app the
+    user has since deleted, and a stale entry that never produces an accepted
+    code is worse than starting over.
+
+    Refused outright once 2FA is on — rotating a live secret would silently
+    invalidate the authenticator the user is currently relying on. Disable
+    first, which requires the password.
+    """
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Two-factor authentication is already enabled",
+        )
+    # Checked before anything is generated, so a server without a key never
+    # writes a secret it cannot protect.
+    if not totp_crypto.is_configured():
+        # Delegated so there is one message and one log line, not two copies.
+        totp_crypto.require_configured()
+
+    secret = totp.generate_secret()
+    # Encrypted before it touches the row; the plaintext only ever leaves in
+    # this response, for the QR code the client is about to render.
+    current_user.totp_secret = totp_crypto.encrypt_secret(secret)
+    db.add(current_user)
+    await db.flush()
+
+    return secret, totp.provisioning_uri(secret, current_user.email)
+
+
+async def enable_totp(db: AsyncSession, current_user: User, code: str) -> list[str]:
+    """Verify a code, turn 2FA on, and return one-time recovery codes."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Two-factor authentication is already enabled",
+        )
+    secret = totp_crypto.decrypt_secret(current_user.totp_secret)
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Start two-factor setup before enabling it",
+        )
+    if not totp.verify_code(secret, code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That code is not valid. Check your authenticator app and try again.",
+        )
+
+    current_user.totp_enabled = True
+    current_user.totp_confirmed_at = datetime.now(timezone.utc)
+    db.add(current_user)
+
+    # Replace any codes from an earlier enrolment: a code printed before the
+    # secret was re-minted must not still open the account.
+    await _delete_recovery_codes(db, current_user.id)
+    plaintext = totp.generate_recovery_codes()
+    for code_value in plaintext:
+        db.add(
+            TotpRecoveryCode(
+                user_id=current_user.id, code_hash=totp.hash_recovery_code(code_value)
+            )
+        )
+    await db.flush()
+
+    return plaintext
+
+
+async def disable_totp(
+    db: AsyncSession, current_user: User, password: str, code: str
+) -> None:
+    """Turn 2FA off. Requires the password AND a second-factor code."""
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled",
+        )
+    if not current_user.password_hash or not verify_password(
+        password, current_user.password_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Password is incorrect"
+        )
+
+    # A recovery code is accepted here on purpose: someone who has lost their
+    # authenticator needs a way out that is not "contact support", and they have
+    # already proved knowledge of the password above.
+    if not await _consume_second_factor(db, current_user, code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That code is not valid. Use a code from your app or a recovery code.",
+        )
+
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    current_user.totp_confirmed_at = None
+    db.add(current_user)
+    await _delete_recovery_codes(db, current_user.id)
+    await db.flush()
+
+
+async def complete_totp_login(
+    db: AsyncSession,
+    challenge_token: str,
+    code: str,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+    background_tasks: BackgroundTasks | None = None,
+) -> tuple[User, dict]:
+    """Second half of a 2FA login: exchange a challenge token + code for tokens."""
+    user_id = totp.verify_challenge_token(challenge_token)
+
+    result = await db.execute(select(User).where(User.id == UUID(str(user_id))))
+    user = result.scalar_one_or_none()
+    if user is None or not user.totp_enabled:
+        # Covers a challenge token minted before 2FA was turned off, and a
+        # deleted account. Same message either way — this endpoint is reachable
+        # without a session, so it must not become an account oracle.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired two-factor challenge",
+        )
+
+    if not await _consume_second_factor(db, user, code):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="That code is not valid",
+        )
+
+    # Asked before the session row is written, same as in login() — and it has
+    # to happen here rather than in step one, or enabling 2FA would silently
+    # switch new-device alerts off for the accounts that most want them.
+    is_new_device = await is_unseen_device(db, user.id, user_agent)
+
+    tokens = await create_token_pair(
+        db, user.id, user_agent=user_agent, ip_address=ip_address
+    )
+    await db.commit()
+
+    if is_new_device and user.signin_alerts_enabled and background_tasks is not None:
+        background_tasks.add_task(
+            send_new_device_signin_alert,
+            user.email,
+            device=describe_device(user_agent),
+            browser=describe_browser(user_agent),
+            ip_address=ip_address,
+        )
+
+    return user, tokens
+
+
+async def _consume_second_factor(db: AsyncSession, user: User, code: str) -> bool:
+    """True if `code` is a valid TOTP code or an unused recovery code.
+
+    A recovery code is marked used before this returns, so it is single-use even
+    if the caller retries with the same value.
+    """
+    secret = totp_crypto.decrypt_secret(user.totp_secret)
+    if secret and totp.verify_code(secret, code):
+        return True
+
+    result = await db.execute(
+        select(TotpRecoveryCode).where(
+            TotpRecoveryCode.user_id == user.id,
+            TotpRecoveryCode.used_at.is_(None),
+        )
+    )
+    for row in result.scalars().all():
+        if totp.recovery_code_matches(code, row.code_hash):
+            row.used_at = datetime.now(timezone.utc)
+            db.add(row)
+            await db.flush()
+            return True
+
+    return False
+
+
+async def _delete_recovery_codes(db: AsyncSession, user_id: UUID) -> None:
+    result = await db.execute(
+        select(TotpRecoveryCode).where(TotpRecoveryCode.user_id == user_id)
+    )
+    for row in result.scalars().all():
+        await db.delete(row)
+
+
+async def count_unused_recovery_codes(db: AsyncSession, user_id: UUID) -> int:
+    result = await db.execute(
+        select(TotpRecoveryCode).where(
+            TotpRecoveryCode.user_id == user_id,
+            TotpRecoveryCode.used_at.is_(None),
+        )
+    )
+    return len(result.scalars().all())

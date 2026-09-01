@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     CLOUDFLARE_TURNSTILE_SECRET_KEY: str | None = None
 
+    # Encrypts users.totp_secret at rest (app/auth/totp_crypto.py). A SEPARATE
+    # secret from SECRET_KEY on purpose: sharing them would mean rotating the
+    # JWT key locks every 2FA user out of their authenticator. Unset means
+    # enrolment is refused — the feature fails closed rather than storing
+    # password-equivalent secrets in plaintext.
+    TOTP_ENCRYPTION_KEY: str | None = None
+
     # Cloudflare R2 (S3-compatible). Locally, point at the minio container.
     R2_ENDPOINT_URL: str | None = None
     R2_ACCESS_KEY_ID: str | None = None
