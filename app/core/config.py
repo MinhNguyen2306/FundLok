@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: str | None = None
     MICROSOFT_TENANT_ID: str = "common"
     MOCK_UPLOAD_BASE_URL: str = "https://mock-storage.fundlok.local/upload"
-    FRONTEND_URL: str = "https://www.fundlok.com"
-    ALLOWED_ORIGINS: str = "https://www.fundlok.com,https://fundlok.com,https://fundlok-front-end.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+    FRONTEND_URL: str = "http://localhost:3000"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://fundlok-front-end.vercel.app"
     CLOUDFLARE_TURNSTILE_SECRET_KEY: str | None = None
 
     # Encrypts users.totp_secret at rest (app/auth/totp_crypto.py). A SEPARATE
