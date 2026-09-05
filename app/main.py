@@ -14,6 +14,7 @@ from app.system.service import is_maintenance_active
 from app.system.router import router as system_router
 from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
+from app.core.config import settings
 from app.core.database import get_db
 from app.loans.router import router as loans_router
 from app.market.router import router as market_router
@@ -67,13 +68,21 @@ async def maintenance_gate(request: Request, call_next):
 # =====================================================
 
 
+# ================= SECURITY HEADERS =================
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+# ====================================================
+
+
 # ================= CORS CONFIGURATION =================
-# Define the URLs allowed to access this API[cite: 5]
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://fundlok-front-end.vercel.app"
-]
+# URLs allowed to access this API, configurable via ALLOWED_ORIGINS in .env
+origins = settings.cors_origins
 
 app.add_middleware(
     CORSMiddleware,

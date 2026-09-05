@@ -83,11 +83,12 @@ def compute_rollup(
     premiums: Dict[str, float] = {}
     for group_name, group_weights in params.rollup.items():
         premium = compute_group_premium(group_weights, factor_scores)
-        assert premium <= 100.0, (
-            f"{group_name} premium {premium} exceeds 100 -- premiums are not "
-            "clamped by design (R7); this indicates drift from the golden "
-            "set, not something to silently clamp"
-        )
+        if premium > 100.0:
+            raise ValueError(
+                f"{group_name} premium {premium} exceeds 100 -- premiums are not "
+                "clamped by design (R7); this indicates drift from the golden "
+                "set, not something to silently clamp"
+            )
         premiums[group_name] = premium
 
     final_grade = sum(weight * premiums[group_name] for group_name, weight in params.final_grade.items())

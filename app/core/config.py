@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_ID: str | None = None
     MICROSOFT_TENANT_ID: str = "common"
     MOCK_UPLOAD_BASE_URL: str = "https://mock-storage.fundlok.local/upload"
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "https://www.fundlok.com"
+    ALLOWED_ORIGINS: str = "https://www.fundlok.com,https://fundlok.com,https://fundlok-front-end.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
     CLOUDFLARE_TURNSTILE_SECRET_KEY: str | None = None
 
     # Encrypts users.totp_secret at rest (app/auth/totp_crypto.py). A SEPARATE
@@ -73,6 +74,14 @@ class Settings(BaseSettings):
     # Require the SME's KYC-verified person_number to appear among the
     # certificate's legal representatives (spec Rule 7, default off pending review).
     GVERIFY_KYB_REQUIRE_REP_MATCH: bool = False
+
+    @property
+    def cors_origins(self) -> list[str]:
+        origins = [o.strip().rstrip("/") for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+        frontend = self.FRONTEND_URL.strip().rstrip("/") if self.FRONTEND_URL else None
+        if frontend and frontend not in origins:
+            origins.append(frontend)
+        return origins
 
 
 

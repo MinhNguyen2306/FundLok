@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
@@ -725,9 +725,11 @@ async def _delete_recovery_codes(db: AsyncSession, user_id: UUID) -> None:
 
 async def count_unused_recovery_codes(db: AsyncSession, user_id: UUID) -> int:
     result = await db.execute(
-        select(TotpRecoveryCode).where(
+        select(func.count())
+        .select_from(TotpRecoveryCode)
+        .where(
             TotpRecoveryCode.user_id == user_id,
             TotpRecoveryCode.used_at.is_(None),
         )
     )
-    return len(result.scalars().all())
+    return result.scalar_one() or 0
