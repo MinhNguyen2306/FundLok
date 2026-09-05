@@ -154,22 +154,18 @@ jobs:
       # --no-deps is safe precisely because requirements.txt pins every
       # transitive too -- there is nothing left for it to resolve.
       #
-      # The suppressions below are the two findings we have accepted. Both are
-      # unreachable from our code; re-check them before adding a third.
+      # The suppression below is the one finding we have accepted. It is
+      # unreachable from our code; re-check it before adding another.
       #   ecdsa 0.19.2  CVE-2024-23342, Minerva timing attack on P-256. No fix
       #                 exists: upstream considers side-channel resistance out
       #                 of scope. It ships as a hard dependency of python-jose
       #                 but never runs -- our own tokens are HS256 and provider
       #                 ID tokens verify as RS256.
-      #   cryptography  CVE-2026-69247, PKCS#7 EnvelopedData. Held at 49.0.0 by
-      #                 fastapi-mail; see the requirements.txt header. Drop this
-      #                 pair when that cap lifts and the bump lands.
       - name: Audit pinned dependencies for known vulnerabilities
         run: |
           pipx run pip-audit==2.10.1 \
             --requirement requirements.txt --no-deps --strict \
-            --ignore-vuln GHSA-wj6h-64fc-37mp --ignore-vuln PYSEC-2026-1325 \
-            --ignore-vuln GHSA-g6cj-pr64-35w5 --ignore-vuln PYSEC-2026-3552
+            --ignore-vuln GHSA-wj6h-64fc-37mp --ignore-vuln PYSEC-2026-1325
 
   deploy-staging:
     name: Deploy to Cloud Run (staging)
