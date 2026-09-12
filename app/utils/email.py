@@ -7,13 +7,16 @@ def send_email(
     to_email: str,
     subject: str,
     html_content: str,
-    text_content: str | None = None
+    text_content: str | None = None,
+    reply_to: str | None = None
 ) -> None:
     # 1. Create message
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
     message["From"] = f"{settings.EMAILS_FROM_NAME} <{settings.EMAILS_FROM_EMAIL}>"
     message["To"] = to_email
+    if reply_to:
+        message["Reply-To"] = reply_to
 
     if not text_content:
         text_content = "Please view this email in an HTML-compatible client."
@@ -130,12 +133,88 @@ def send_contact_autoreply(to_email: str, name: str) -> None:
     """
     
     text_content = f"Hi {name},\n\nWe have successfully received your information. Our team will review your message and get back to you as soon as possible.\n\nBest regards,\nThe FundLok Team"
-    
+
     send_email(
         to_email=to_email,
         subject=subject,
         html_content=html_content,
         text_content=text_content
+    )
+
+
+def send_contact_notification(
+    name: str,
+    email: str,
+    message: str,
+    subject: str | None = None
+) -> None:
+    """Forward a contact-form submission to the team inbox.
+
+    Everything here comes from an anonymous public form, so every field is
+    HTML-escaped before it reaches the template. The submitter's address is set
+    as Reply-To rather than From: sending as them would fail SPF/DKIM for our
+    domain and land the notification in spam.
+    """
+    import html as html_lib
+
+    # Subject and name land in a mail header, so newlines are stripped out
+    # (they would otherwise let a submitter inject extra headers) and the
+    # result is capped to keep the header a sane length.
+    def header_safe(value: str) -> str:
+        return " ".join(value.split())[:120]
+
+    topic = header_safe(subject or "") or "(no subject)"
+    name = header_safe(name) or "(no name)"
+
+    safe_name = html_lib.escape(name)
+    safe_email = html_lib.escape(email)
+    safe_topic = html_lib.escape(topic)
+    safe_message = html_lib.escape(message).replace("\n", "<br/>")
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }}
+        .wrapper {{ background-color: #f4f7f6; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 40px auto; background-color: #ffffff; padding: 40px; border-radius: 12px; }}
+        .title {{ color: #111827; font-size: 20px; font-weight: 700; margin: 0 0 24px; }}
+        .row {{ color: #4b5563; font-size: 15px; line-height: 1.6; margin-bottom: 8px; }}
+        .label {{ color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }}
+        .message {{ color: #111827; font-size: 15px; line-height: 1.6; background-color: #f9fafb; border-radius: 8px; padding: 16px; margin-top: 8px; white-space: pre-wrap; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="container">
+          <h1 class="title">New contact form submission</h1>
+          <p class="row"><span class="label">Name</span><br/>{safe_name}</p>
+          <p class="row"><span class="label">Email</span><br/><a href="mailto:{safe_email}" style="color: #16a34a;">{safe_email}</a></p>
+          <p class="row"><span class="label">Subject</span><br/>{safe_topic}</p>
+          <p class="row"><span class="label">Message</span></p>
+          <div class="message">{safe_message}</div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    text_content = (
+        f"New contact form submission\n\n"
+        f"Name: {name}\n"
+        f"Email: {email}\n"
+        f"Subject: {topic}\n\n"
+        f"Message:\n{message}\n"
+    )
+
+    send_email(
+        to_email=settings.CONTACT_INBOX_EMAIL,
+        subject=f"[Contact] {topic} - {name}",
+        html_content=html_content,
+        text_content=text_content,
+        reply_to=email
     )
 
 

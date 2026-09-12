@@ -1,7 +1,9 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 class ContactRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     email: EmailStr
-    message: str
+    # The form has always sent a subject; it used to be dropped silently here.
+    subject: str | None = Field(default=None, max_length=300)
+    message: str = Field(min_length=1, max_length=5000)
     turnstile_token: str | None = None

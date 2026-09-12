@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     SMTP_SECURE: bool = False
     EMAILS_FROM_EMAIL: str = "noreply@fundlok.com"
     EMAILS_FROM_NAME: str = "FundLok"
+    # Where /contact submissions are forwarded. The submitter's address goes on
+    # Reply-To, so replying from this inbox answers them directly.
+    CONTACT_INBOX_EMAIL: str = "support@fundlok.com"
 
     # Didit KYC / identity verification (https://docs.didit.me)
     # The verification API authenticates with a static secret on x-api-key.
