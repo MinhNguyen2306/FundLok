@@ -16,6 +16,18 @@ class Settings(BaseSettings):
     # publishes every route and schema in the service.
     DEBUG: bool = False
 
+    # Sets the Secure attribute on the auth cookies, so the browser only ever
+    # sends them over HTTPS. Defaults to TRUE: a deployment that forgets this
+    # variable must get the safe behaviour, because the failure mode is a
+    # 14-day refresh token travelling in clear text on any downgraded or
+    # mixed-content request.
+    #
+    # Local development sets it False in .env. Chrome and Firefox do accept
+    # Secure cookies on localhost/127.0.0.1, but Safari historically does not,
+    # and "works in my browser" is a poor reason for a dev to lose their
+    # session.
+    COOKIE_SECURE: bool = True
+
     DATABASE_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

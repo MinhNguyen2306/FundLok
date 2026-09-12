@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from typing import List, Union
 from uuid import UUID
@@ -61,24 +62,29 @@ def _set_auth_cookies(response: Response, tokens: dict, *, remember: bool) -> No
 
     response.set_cookie(
         key="access_token", value=tokens["access_token"],
-        httponly=True, samesite="lax", secure=False, max_age=access_max_age,
+        httponly=True, samesite="lax", secure=settings.COOKIE_SECURE,
+        max_age=access_max_age,
     )
     response.set_cookie(
         key="refresh_token", value=tokens["refresh_token"],
-        httponly=True, samesite="lax", secure=False, max_age=refresh_max_age,
+        httponly=True, samesite="lax", secure=settings.COOKIE_SECURE,
+        max_age=refresh_max_age,
     )
 
     if remember:
         response.set_cookie(
             key=REMEMBER_COOKIE, value="1",
-            httponly=True, samesite="lax", secure=False,
+            httponly=True, samesite="lax", secure=settings.COOKIE_SECURE,
             max_age=REFRESH_COOKIE_MAX_AGE,
         )
     else:
         # Clear a marker left by an earlier remembered login on this browser,
         # otherwise the next refresh would re-persist a session the user just
         # asked not to keep.
-        response.delete_cookie(key=REMEMBER_COOKIE, httponly=True, samesite="lax")
+        response.delete_cookie(
+            key=REMEMBER_COOKIE, httponly=True, samesite="lax",
+            secure=settings.COOKIE_SECURE,
+        )
 
 
 @router.post("/login", response_model=Union[TotpChallengeOut, UserOut])
@@ -274,9 +280,16 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
     refresh_token = request.cookies.get("refresh_token")
     result = await service.logout(db, refresh_token)
     await db.commit()
-    response.delete_cookie(key="access_token", httponly=True, samesite="lax")
-    response.delete_cookie(key="refresh_token", httponly=True, samesite="lax")
-    response.delete_cookie(key=REMEMBER_COOKIE, httponly=True, samesite="lax")
+    # Same attributes as the Set-Cookie that created them. A delete whose
+    # flags do not match the original can be ignored by the browser, leaving a
+    # live session behind on the one request that most needs to end it.
+    for key in ("access_token", "refresh_token", REMEMBER_COOKIE):
+        response.delete_cookie(
+            key=key,
+            httponly=True,
+            samesite="lax",
+            secure=settings.COOKIE_SECURE,
+        )
     return result
 
 
