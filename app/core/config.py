@@ -9,6 +9,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Local development switch. Declared here because `extra="ignore"` above
+    # means an undeclared DEBUG in .env is silently dropped — it was, until
+    # now. Defaults to FALSE so a deployment that forgets to set it is the
+    # closed one: it gates the interactive API docs, and failing open there
+    # publishes every route and schema in the service.
+    DEBUG: bool = False
+
     DATABASE_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

@@ -29,10 +29,20 @@ from app.verification.router import kyb_router, kyc_router
 from app.gverify.router import kyb_router as gverify_kyb_router, router as gverify_router
 from app.contact.router import router as contact_router
 
+# /docs, /redoc and /openapi.json are development tools. Served publicly they
+# hand any visitor the full route inventory and request/response schemas of the
+# admin, verification and banking APIs — a map of everything worth attacking.
+# Gated on DEBUG, which defaults to False, so production is closed unless
+# someone deliberately opens it.
+_DOCS_ENABLED = settings.DEBUG
+
 app = FastAPI(
     title="FundLok API",
     description="MVP backend for FundLok fintech platform",
     version="0.1.0",
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 
