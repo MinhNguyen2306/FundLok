@@ -1,7 +1,14 @@
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import TYPE_CHECKING
+
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    # Type-only: app.contact.router imports this module, so a runtime import
+    # back into app.contact would close the loop.
+    from app.contact.schemas import ContactPurpose
 
 def send_email(
     to_email: str,
@@ -146,7 +153,8 @@ def send_contact_notification(
     name: str,
     email: str,
     message: str,
-    subject: str | None = None
+    subject: str | None = None,
+    purpose: "ContactPurpose | None" = None
 ) -> None:
     """Forward a contact-form submission to the team inbox.
 
@@ -154,6 +162,11 @@ def send_contact_notification(
     HTML-escaped before it reaches the template. The submitter's address is set
     as Reply-To rather than From: sending as them would fail SPF/DKIM for our
     domain and land the notification in spam.
+
+    The subject is prefixed with the purpose the sender picked
+    ("[Partnership] …"), so the inbox can be filtered and triaged on the header
+    alone. The prefix comes from the server-side enum label, never from the
+    request body.
     """
     import html as html_lib
 
@@ -165,10 +178,14 @@ def send_contact_notification(
 
     topic = header_safe(subject or "") or "(no subject)"
     name = header_safe(name) or "(no name)"
+    # "General" covers a submission from a cached bundle that predates the
+    # dropdown, so the subject shape stays constant for inbox filters.
+    purpose_label = purpose.label if purpose else "General"
 
     safe_name = html_lib.escape(name)
     safe_email = html_lib.escape(email)
     safe_topic = html_lib.escape(topic)
+    safe_purpose = html_lib.escape(purpose_label)
     safe_message = html_lib.escape(message).replace("\n", "<br/>")
 
     html_content = f"""
@@ -190,6 +207,7 @@ def send_contact_notification(
       <div class="wrapper">
         <div class="container">
           <h1 class="title">New contact form submission</h1>
+          <p class="row"><span class="label">Purpose</span><br/>{safe_purpose}</p>
           <p class="row"><span class="label">Name</span><br/>{safe_name}</p>
           <p class="row"><span class="label">Email</span><br/><a href="mailto:{safe_email}" style="color: #16a34a;">{safe_email}</a></p>
           <p class="row"><span class="label">Subject</span><br/>{safe_topic}</p>
@@ -203,6 +221,7 @@ def send_contact_notification(
 
     text_content = (
         f"New contact form submission\n\n"
+        f"Purpose: {purpose_label}\n"
         f"Name: {name}\n"
         f"Email: {email}\n"
         f"Subject: {topic}\n\n"
@@ -211,7 +230,7 @@ def send_contact_notification(
 
     send_email(
         to_email=settings.CONTACT_INBOX_EMAIL,
-        subject=f"[Contact] {topic} - {name}",
+        subject=f"[{purpose_label}] {topic} - {name}",
         html_content=html_content,
         text_content=text_content,
         reply_to=email

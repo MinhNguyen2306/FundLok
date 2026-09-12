@@ -17,6 +17,7 @@ def submit_contact_form(contact: ContactRequest, background_tasks: BackgroundTas
         email=contact.email,
         subject=contact.subject,
         message=contact.message,
+        purpose=contact.purpose,
     )
 
     # ...and acknowledge to the sender.
