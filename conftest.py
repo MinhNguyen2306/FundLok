@@ -324,10 +324,24 @@ def make_project(client):
 
 @pytest.fixture
 def make_loan_application(client):
-    async def _make(sme: dict, project_id: str, requested_amount: str = "100000.00"):
+    # `duration_months` defaults to one of `allowed_durations_months` so a
+    # fixture-built application is gradeable. `requested_amount` keeps its
+    # small synthetic default: this route does not bounds-check it (see
+    # LoanApplicationCreate), and the order/ledger suites rely on tiny amounts.
+    # Tests that need a gradeable application pass a real one explicitly.
+    async def _make(
+        sme: dict,
+        project_id: str,
+        requested_amount: str = "100000.00",
+        duration_months: int | None = 9,
+    ):
         resp = await client.post(
             "/loans/applications",
-            json={"business_id": project_id, "requested_amount": requested_amount},
+            json={
+                "business_id": project_id,
+                "requested_amount": requested_amount,
+                "duration_months": duration_months,
+            },
             headers=auth_headers(sme),
         )
         assert resp.status_code == 201, resp.text

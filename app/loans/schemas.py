@@ -2,20 +2,41 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.projects import engine_constraints
 
 
 class LoanApplicationCreate(BaseModel):
     business_id: UUID
     requested_amount: Decimal
+    # Validated against the engine's allowed_durations_months, like the inline
+    # create on POST /projects: a term the engine does not grade is unscoreable,
+    # and this is the last point at which the applicant still has the field in
+    # front of them.
+    #
+    # `requested_amount` is deliberately NOT bounds-checked here, unlike on the
+    # inline path. This route is not the applicant-facing one -- the wizard
+    # creates its application through POST /projects, where the check already
+    # runs -- and applying it here would reject the small synthetic amounts that
+    # the order, ledger and idempotency suites use to test unrelated things. An
+    # out-of-bounds amount that reaches the engine surfaces as a 409 from the
+    # indicative-rate endpoint rather than a 500.
+    duration_months: int | None = None
     purpose: str | None = None
     repayment_preference: str | None = None
+
+    @field_validator("duration_months")
+    @classmethod
+    def _duration_is_allowed(cls, value: int | None) -> int | None:
+        return engine_constraints.validate_duration_months(value)
 
 
 class LoanApplicationOut(BaseModel):
     id: UUID
     project_id: UUID
     requested_amount: Decimal
+    duration_months: int | None = None
     purpose: str | None
     repayment_preference: str | None
     status: str
@@ -105,6 +126,40 @@ class LoanApplicationFiguresIn(BaseModel):
             raise ValueError("conc_top1_pct cannot exceed conc_top3_pct")
 
         return self
+
+
+class IndicativeRateOut(BaseModel):
+    """An indicative interest band for an application, never an offer.
+
+    Mirrors `app.loans.lite_grading.LiteBand` field for field. The shape is a
+    RANGE by construction: the applicant's CIC score is unknown before KYC, so
+    the engine is run at both ends of the range it was calibrated against and
+    the two rates bracket the answer. There is deliberately no single-figure
+    variant of this response — a point estimate would read as a quote.
+
+    `assumptions` is not decoration. Each entry names a thing the band took on
+    faith (bracketed CIC, assumed AML pass, revenue modelled from annual
+    totals), and the UI is required to show them alongside the numbers.
+    """
+
+    rate_low_pct: float
+    rate_high_pct: float
+    grade_low: float
+    grade_high: float
+    decision_low: str
+    decision_high: str
+
+    # Stamped so a band a user was shown can be reconstructed later, per the
+    # handbook's rule that anything shown to a user is versioned.
+    engine_version: str
+    params_version: str
+    sector_reference_version: str
+
+    # True while the sector reference table is still DRAFT_UNREVIEWED. Sector
+    # drives 36% of the spread, so the table's own instruction is that callers
+    # surface results as provisional until the CEO signs it off.
+    provisional: bool
+    assumptions: list[str]
 
 
 class LoanApplicationFiguresOut(LoanApplicationFiguresIn):

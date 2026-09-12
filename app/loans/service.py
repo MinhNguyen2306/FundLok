@@ -1,10 +1,12 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
-from app.lending.models import LoanApplication
+from app.lending.models import LoanApplication, Project
+from app.loans.lite_grading import LiteBand, LiteGradingError, grade_lite
 from app.loans.schemas import LoanApplicationCreate, LoanApplicationFiguresIn
 from app.projects.service import user_owns_project
 from app.users.models import Role, User
@@ -19,6 +21,7 @@ async def create_application(db: AsyncSession, body: LoanApplicationCreate, curr
     app_row = LoanApplication(
         project_id=body.business_id,
         requested_amount=body.requested_amount,
+        duration_months=body.duration_months,
         purpose=body.purpose,
         repayment_preference=body.repayment_preference,
         status="DRAFT",
@@ -75,6 +78,153 @@ async def save_figures(
     await db.flush()
     await db.refresh(row)
     return row
+
+
+def _reason(code: str, message: str, fields: list[str] | None = None) -> dict:
+    """A 409 body the frontend can translate.
+
+    `code` is the contract; `message` is a fallback for anything that cannot
+    translate it (logs, API consumers, a frontend that has no string for a code
+    added after it shipped).
+    """
+    body = {"code": code, "message": message}
+    if fields:
+        body["fields"] = fields
+    return body
+
+
+def _operating_months(incorporation_date: date | None, today: date) -> int:
+    """Whole months between incorporation and today.
+
+    Calendar months, not days/30: the engine compares this against
+    `duration_months` (soft gate 2, `history_vs_term`) and against the
+    operating-history band, both of which are stated in months. A day-based
+    approximation drifts by up to a fortnight a year and can flip a borderline
+    gate, which is not a thing an applicant could ever explain.
+    """
+    if incorporation_date is None:
+        raise LiteGradingError(
+            "This business has no incorporation date on file, so its operating "
+            "history cannot be established.",
+            code="NO_INCORPORATION_DATE",
+        )
+    if incorporation_date > today:
+        raise LiteGradingError(
+            "Incorporation date is in the future.",
+            code="FUTURE_INCORPORATION_DATE",
+        )
+    months = (today.year - incorporation_date.year) * 12 + (
+        today.month - incorporation_date.month
+    )
+    # Not yet past the day-of-month anniversary, so the final month is partial.
+    if today.day < incorporation_date.day:
+        months -= 1
+    return max(months, 0)
+
+
+async def indicative_rate(
+    db: AsyncSession, application_id: UUID, current_user: User
+) -> LiteBand:
+    """The indicative interest band for an application's stated figures.
+
+    Read-only and computed on demand rather than stored. The band is not an
+    offer and nothing is agreed against it -- it is a preview of what the
+    engine makes of the numbers the applicant just typed, and it changes the
+    moment they change a figure. Persisting it would create a second source of
+    truth for a rate that the real, post-KYC score run supersedes anyway. The
+    response is still stamped with `engine_version`/`params_version` so a band
+    a user was shown can be reconstructed from the stored figures.
+
+    Every failure here is a 409 with the reason: the applicant is mid-wizard
+    and the fix is always another field, so "what is missing" is the whole
+    useful content of the error.
+
+    Those 409s carry a STRUCTURED detail -- `{code, message, fields}` -- rather
+    than the bare string the rest of the API uses. A deliberate exception to
+    that convention: this is the one endpoint whose errors are rendered to an
+    applicant in two languages, and a prose string can only ever be shown in the
+    language the server wrote it in. `message` stays as the English fallback and
+    the log line; `code` is what the frontend translates; `fields` are machine
+    names so the UI can label them in the reader's language.
+    """
+    row = await _owned_application(db, application_id, current_user)
+
+    if not row.self_reported_figures:
+        raise HTTPException(
+            status_code=409,
+            detail=_reason(
+                "NO_FIGURES",
+                "No figures have been saved for this application yet.",
+            ),
+        )
+
+    project = await db.get(Project, row.project_id)
+    if project is None:
+        # The FK is ON DELETE CASCADE, so a live application always has one.
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Machine names, not prose: the UI labels them in the applicant's language.
+    missing = [
+        name
+        for name, value in (
+            ("industry", project.industry),
+            ("employee_count", project.employee_count),
+            ("duration_months", row.duration_months),
+        )
+        if value is None
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail=_reason(
+                "MISSING_INPUTS",
+                (
+                    "This application is missing "
+                    f"{', '.join(missing)}, which the grading engine requires."
+                ),
+                fields=missing,
+            ),
+        )
+
+    try:
+        return grade_lite(
+            # `company_code` is a label on GradingInput -- no grading module
+            # reads it -- so the project id stands in when a tax id has not
+            # been captured. It must not silently become an empty string: the
+            # value is echoed into score-run records for traceability.
+            company_code=project.tax_id or str(project.id),
+            industry=project.industry,
+            employee_count=project.employee_count,
+            incorporation_date_months=_operating_months(
+                project.incorporation_date, datetime.now(timezone.utc).date()
+            ),
+            loan_size_vnd=Decimal(row.requested_amount),
+            duration_months=row.duration_months,
+            figures=row.self_reported_figures,
+        )
+    except LiteGradingError as exc:
+        # Written to be shown to an applicant -- costs above revenue, an
+        # unscoreable industry, a headcount outside every band. A real answer
+        # about their numbers, not a bug.
+        raise HTTPException(
+            status_code=409, detail=_reason(exc.code, str(exc))
+        ) from exc
+    except ValueError as exc:
+        # `grade()`'s own input validation (core spec §7): loan size outside
+        # `loan_constraints`, a term not in `allowed_durations_months`, an
+        # unrecognised industry. Those bounds are enforced at create time now,
+        # but rows written before that validation existed still fail them, and
+        # a legacy application must not 500 an applicant's wizard.
+        raise HTTPException(
+            status_code=409,
+            detail=_reason(
+                "OUT_OF_ENGINE_BOUNDS",
+                (
+                    "This application's amount or term is outside what the "
+                    f"grading engine accepts: {exc}"
+                ),
+            ),
+        ) from exc
 
 
 async def submit_application(db: AsyncSession, application_id: UUID, current_user: User) -> LoanApplication:

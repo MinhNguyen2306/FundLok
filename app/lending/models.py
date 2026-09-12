@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -26,6 +27,13 @@ class Project(Base):
     legal_name = Column(Text, nullable=False)
     tax_id = Column(Text, unique=True)
     industry = Column(Text)
+    # Grading inputs. `employee_count` is what the SME typed; `company_size` is
+    # derived from it server-side against the params file (never trusted from
+    # the client) and is what `GradingInput.company_size` reads. Both nullable:
+    # projects created before migration a4e91c2d7b58 have neither, and such a
+    # project simply cannot be graded until someone supplies a headcount.
+    employee_count = Column(Integer)
+    company_size = Column(Text)
     address = Column(JSONB)
     incorporation_date = Column(Date)
     status = Column(
@@ -80,6 +88,11 @@ class LoanApplication(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     requested_amount = Column(Numeric(15, 2), nullable=False)
+    # Loan term. Validated against the engine's allowed_durations_months at the
+    # API edge (app/projects/engine_constraints.py) so an unscoreable term is
+    # refused at the field the applicant typed it in, not discovered later by
+    # an admin. Nullable for rows predating migration a4e91c2d7b58.
+    duration_months = Column(Integer)
     purpose = Column(Text)
     repayment_preference = Column(Text)
     status = Column(Text, nullable=False, server_default="DRAFT")

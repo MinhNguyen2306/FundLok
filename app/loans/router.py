@@ -3,12 +3,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.loans.schemas import (
+    IndicativeRateOut,
     LoanApplicationCreate,
     LoanApplicationFiguresIn,
     LoanApplicationFiguresOut,
     LoanApplicationOut,
 )
-from app.loans.service import create_application, save_figures, submit_application
+from app.loans.service import (
+    create_application,
+    indicative_rate,
+    save_figures,
+    submit_application,
+)
 from uuid import UUID
 
 from app.users.models import Role, User
@@ -76,6 +82,42 @@ async def save_loan_application_figures(
     return LoanApplicationFiguresOut(
         **row.self_reported_figures,
         figures_updated_at=row.figures_updated_at,
+    )
+
+
+@router.get(
+    "/applications/{application_id}/indicative-rate",
+    response_model=IndicativeRateOut,
+)
+async def get_indicative_rate(
+    application_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_sme),
+):
+    """The indicative interest band for the figures saved on this application.
+
+    A GET with no side effects: the band is derived from data the applicant
+    already gave us, so re-reading it must be free and repeatable. Nothing is
+    written and nothing is audited here -- no decision is made, no state moves,
+    and an audit row per keystroke-triggered refetch would bury the events that
+    matter.
+
+    SME-only, and scoped to applications the caller owns by `_owned_application`
+    (404, not 403, for someone else's -- see the note there).
+    """
+    band = await indicative_rate(db, application_id, current_user)
+    return IndicativeRateOut(
+        rate_low_pct=band.rate_low_pct,
+        rate_high_pct=band.rate_high_pct,
+        grade_low=band.grade_low,
+        grade_high=band.grade_high,
+        decision_low=band.decision_low,
+        decision_high=band.decision_high,
+        engine_version=band.engine_version,
+        params_version=band.params_version,
+        sector_reference_version=band.sector_reference_version,
+        provisional=band.provisional,
+        assumptions=list(band.assumptions),
     )
 
 

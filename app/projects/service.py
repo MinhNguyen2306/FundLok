@@ -22,14 +22,12 @@ async def create_project(
             detail="Only SMEs can create projects",
         )
     try:
-        # employee_count / company_size are validated (and company_size derived)
-        # on the way in, but `projects` has no column for either yet, so they
-        # cannot be passed to the model. Adding the columns is a shared-model
-        # change — see docs/specs/underwriting/grading-input-sources.md §3.3.
+        # employee_count and the company_size derived from it are persisted as
+        # of migration a4e91c2d7b58 — they are two of the engine's required
+        # inputs, and dropping them was what made a stored application
+        # ungradeable (grading-input-sources.md §3.3).
         new_project = Project(
-            **project_data.model_dump(
-                exclude={"loan_application", "employee_count", "company_size"}
-            ),
+            **project_data.model_dump(exclude={"loan_application"}),
             status="DRAFT",
         )
         db.add(new_project)
@@ -47,6 +45,7 @@ async def create_project(
             loan_app = LoanApplication(
                 project_id=new_project.id,
                 requested_amount=project_data.loan_application.requested_amount,
+                duration_months=project_data.loan_application.duration_months,
                 purpose=project_data.loan_application.purpose,
                 repayment_preference=project_data.loan_application.repayment_preference,
                 status="DRAFT",
