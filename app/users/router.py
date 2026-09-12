@@ -17,6 +17,7 @@ from app.users.schemas import (
     SecurityPreferencesUpdate,
 )
 from app.users.service import (
+    complete_onboarding_tour,
     change_password,
     update_security_preferences,
     confirm_avatar,
@@ -223,3 +224,21 @@ async def patch_security_preferences(
     return SecurityPreferencesOut(
         signin_alerts_enabled=bool(user.signin_alerts_enabled)
     )
+
+
+@router.post("/me/onboarding-tour/complete")
+async def complete_onboarding_tour_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark the first-run dashboard walkthrough as seen for this ACCOUNT.
+
+    Not audited, unlike the security preferences beside it: nothing here can
+    take an account away from its owner, and an audit row per dismissed tooltip
+    would bury the events that matter.
+
+    Returns the whole /me payload so the frontend can seed its cached user in
+    one round trip rather than refetching after the write.
+    """
+    user = await complete_onboarding_tour(db, current_user)
+    return user_me_payload(user)

@@ -50,6 +50,14 @@ def user_me_payload(user: User) -> dict:
         # hash itself.
         "has_password": bool(user.password_hash),
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        # Drives the first-run walkthrough. Null until the user finishes or
+        # skips it; the frontend reads this instead of browser storage so the
+        # state follows the account across devices.
+        "onboarding_tour_completed_at": (
+            user.onboarding_tour_completed_at.isoformat()
+            if user.onboarding_tour_completed_at
+            else None
+        ),
     }
 
 
@@ -250,4 +258,20 @@ async def update_security_preferences(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
+    return current_user
+
+
+async def complete_onboarding_tour(db: AsyncSession, current_user: User) -> User:
+    """Record that this account has seen the first-run walkthrough.
+
+    Idempotent on purpose: the frontend fires this on "skip", on "got it" and
+    on Escape, and a double-submit from a slow connection must not move the
+    timestamp. The FIRST completion is the interesting one — it says when this
+    account was onboarded — so a second call is a no-op rather than a refresh.
+    """
+    if current_user.onboarding_tour_completed_at is None:
+        current_user.onboarding_tour_completed_at = datetime.now(timezone.utc)
+        db.add(current_user)
+        await db.commit()
+        await db.refresh(current_user)
     return current_user

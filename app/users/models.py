@@ -32,6 +32,17 @@ class User(Base):
     # see migration b8d41c60ea92.
     signin_alerts_enabled = Column(Boolean, nullable=False, server_default="false")
 
+    # When this user finished (or skipped) the first-run dashboard walkthrough.
+    # NULL means they have not seen it yet.
+    #
+    # Server-side rather than in the browser because the walkthrough belongs to
+    # the ACCOUNT, not the device: someone who onboarded on their laptop should
+    # not be walked through the product again on their phone, and someone who
+    # clears site data should not lose the fact either. A timestamp rather than
+    # a boolean so we can tell "onboarded last year" from "onboarded today"
+    # when the tour changes and we decide whether to re-run it.
+    onboarding_tour_completed_at = Column(DateTime(timezone=True))
+
     # --- Two-factor authentication (TOTP, RFC 6238) ---
     # The base32 shared secret. Written at setup and kept even while
     # totp_enabled is false, because enrolment is two steps: the client needs a
