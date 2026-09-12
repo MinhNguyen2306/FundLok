@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://fundlok-front-end.vercel.app"
     CLOUDFLARE_TURNSTILE_SECRET_KEY: str | None = None
 
+    # --- Passkeys / WebAuthn ---
+    # The Relying Party ID is the domain a credential is bound to, and a
+    # passkey registered against one RP ID cannot be used against another —
+    # get it wrong and every existing passkey silently stops working. It must
+    # be the site's registrable domain (no scheme, no port): "localhost" in
+    # development, "fundlok.com" in production. Derived from FRONTEND_URL when
+    # unset so local development needs no configuration at all.
+    WEBAUTHN_RP_ID: str | None = None
+    WEBAUTHN_RP_NAME: str = "FundLok"
+    # Exact origin(s) the browser will report, scheme and port included.
+    # Comma-separated: a staging domain and production can share a build.
+    WEBAUTHN_ORIGINS: str | None = None
+
     # Encrypts users.totp_secret at rest (app/auth/totp_crypto.py). A SEPARATE
     # secret from SECRET_KEY on purpose: sharing them would mean rotating the
     # JWT key locks every 2FA user out of their authenticator. Unset means
@@ -96,6 +109,23 @@ class Settings(BaseSettings):
     # Require the SME's KYC-verified person_number to appear among the
     # certificate's legal representatives (spec Rule 7, default off pending review).
     GVERIFY_KYB_REQUIRE_REP_MATCH: bool = False
+
+    @property
+    def webauthn_rp_id(self) -> str:
+        """Registrable domain for passkeys, derived from FRONTEND_URL if unset."""
+        if self.WEBAUTHN_RP_ID:
+            return self.WEBAUTHN_RP_ID.strip()
+        from urllib.parse import urlparse
+
+        host = urlparse(self.FRONTEND_URL).hostname or "localhost"
+        return host
+
+    @property
+    def webauthn_origins(self) -> list[str]:
+        """Origins an assertion may legitimately come from."""
+        if self.WEBAUTHN_ORIGINS:
+            return [o.strip().rstrip("/") for o in self.WEBAUTHN_ORIGINS.split(",") if o.strip()]
+        return [self.FRONTEND_URL.strip().rstrip("/")]
 
     @property
     def cors_origins(self) -> list[str]:

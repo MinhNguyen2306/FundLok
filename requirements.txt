@@ -118,3 +118,6 @@ urllib3==2.7.0
 uvloop==0.22.1
 watchfiles==1.2.0
 websockets==17.0.1
+# Passkey / WebAuthn ceremonies (app/auth/passkeys.py)
+webauthn==3.0.0
+cbor2==6.1.4

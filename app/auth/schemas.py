@@ -197,3 +197,38 @@ class TotpStatusOut(BaseModel):
     enabled: bool
     confirmed_at: datetime | None = None
     recovery_codes_remaining: int
+
+
+# --- Passkeys / WebAuthn ---
+
+
+class PasskeyRegisterVerifyRequest(BaseModel):
+    """The browser's PublicKeyCredential, forwarded verbatim.
+
+    Kept as a free-form dict rather than modelled field by field: the shape is
+    the WebAuthn spec's, py_webauthn parses and validates it, and restating it
+    here in Pydantic would add a second definition that can only drift.
+    """
+
+    credential: dict
+    name: str | None = Field(default=None, max_length=80)
+
+
+class PasskeyLoginVerifyRequest(BaseModel):
+    credential: dict
+    remember_me: bool = False
+
+
+class PasskeyRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class PasskeyOut(BaseModel):
+    id: UUID
+    name: str
+    device_type: str | None = None
+    backed_up: bool
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+
+    model_config = {"from_attributes": True}

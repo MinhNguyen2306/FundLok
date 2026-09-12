@@ -1,12 +1,16 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import passkeys
 from app.core.config import settings
 from app.core.database import get_db
 from typing import List, Union
 from uuid import UUID
 
 from app.auth.schemas import (
+    PasskeyLoginVerifyRequest,
+    PasskeyOut,
+    PasskeyRegisterVerifyRequest,
     TotpChallengeOut,
     TotpDisableRequest,
     TotpEnableOut,
@@ -423,3 +427,117 @@ async def list_security_events(
         )
         for row in rows
     ]
+
+
+# --- Passkeys / WebAuthn ---------------------------------------------------- #
+#
+# Registration is authenticated: adding a passkey is a change to an account you
+# are already holding. Sign-in is not, for the obvious reason.
+
+
+@router.get("/passkeys", response_model=List[PasskeyOut])
+async def list_passkeys(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await passkeys.credentials_for_user(db, current_user.id)
+
+
+@router.post("/passkeys/register/options")
+async def passkey_registration_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Options for creating a passkey. Returns the spec's JSON verbatim."""
+    return Response(
+        content=await passkeys.registration_options(db, current_user),
+        media_type="application/json",
+    )
+
+
+@router.post("/passkeys/register/verify", response_model=PasskeyOut, status_code=201)
+async def passkey_registration_verify(
+    body: PasskeyRegisterVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    credential = await passkeys.verify_registration(
+        db, current_user, body.credential, body.name
+    )
+    # Audited like the 2FA changes beside it: adding a way to sign in is
+    # exactly what someone who has taken over an account does next.
+    append_audit(
+        db,
+        entity_type="AUTH",
+        entity_id=current_user.id,
+        action="PASSKEY_ADDED",
+        actor_id=current_user.id,
+        after_state={"credential_id": credential.credential_id, "name": credential.name},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return credential
+
+
+@router.delete("/passkeys/{credential_id}", status_code=204)
+async def passkey_delete(
+    credential_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = await passkeys.delete_credential(db, current_user, credential_id)
+    append_audit(
+        db,
+        entity_type="AUTH",
+        entity_id=current_user.id,
+        action="PASSKEY_REMOVED",
+        actor_id=current_user.id,
+        before_state={"credential_id": row.credential_id, "name": row.name},
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/passkeys/login/options")
+async def passkey_login_options(db: AsyncSession = Depends(get_db)):
+    """Unauthenticated by design — the caller has no session yet.
+
+    Takes no email and returns no account information, so it cannot be used to
+    test whether an address is registered.
+    """
+    return Response(
+        content=await passkeys.authentication_options(db),
+        media_type="application/json",
+    )
+
+
+@router.post("/passkeys/login/verify", response_model=UserOut)
+async def passkey_login_verify(
+    body: PasskeyLoginVerifyRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
+
+    user, credential = await passkeys.verify_authentication(db, body.credential)
+    tokens = await service.create_token_pair(
+        db, user.id, user_agent=user_agent, ip_address=ip_address
+    )
+    append_audit(
+        db,
+        entity_type="SESSION",
+        entity_id=user.id,
+        action="SIGN_IN",
+        actor_id=user.id,
+        after_state={"user_agent": user_agent, "method": "PASSKEY",
+                     "credential_id": credential.credential_id},
+        ip_address=ip_address,
+    )
+    await db.commit()
+    _set_auth_cookies(response, tokens, remember=body.remember_me)
+    return user
