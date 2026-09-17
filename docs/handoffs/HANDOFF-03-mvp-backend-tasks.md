@@ -396,7 +396,14 @@ path**; the temp solution is the permanent reconciler.
 placed and never paid leaves `funded_amount` at zero and expires;
 `test_order_does_not_fill_without_confirmed_payment`; `test_disbursement_refused_when_funding_unconfirmed`;
 every posting balances.
-*Depends on:* **T0f**, T1, T6, T9.
+*Depends on:* T1, T6, T9, T21.
+
+**PREREQUISITE found while writing T21 (17 Sep).** `post_transaction`'s pass-through check rejects
+any account touched by more than one leg unless it nets to zero. That is right for `OMNIBUS_CASH`,
+but it wrongly rejects `BORROWER` acting as a pure multi-source credit endpoint in the two-leg
+disbursement (`OMNIBUS_CASH` supplies `P`, `UNEARNED_INTEREST` supplies `I₀`, `BORROWER` is credited
+`T₀`). Narrow the check to distinguish a hub from a multi-source endpoint **before** T10 posts a real
+`DISBURSEMENT`. Spec'd but not implemented in T21.
 
 **T11 — Daily batch: reminders, cutoff, arrears, backstop.** `[D]`
 The repayment spec's §6.2 cycle as an ARQ job. Reminder at day open. At cutoff mark days `SATISFIED`/`MISSED` — there is
@@ -615,7 +622,15 @@ Note `account_type` carries a DB `CHECK` constraint listing the five existing ty
    clearing account or `OMNIBUS_CASH` acting as the pool contra, and states the reconciliation
    invariant that ties the ledger to the bank statement.
 
-**T21 — Funding-flow spec.** `docs/specs/payments/funding-flow.md`. The full leg table for `FUNDING`,
+**T21 — Funding-flow spec. ✅ DONE (25bbd59, 17 Sep).** Delivered beyond scope: introduced
+`EXTERNAL` (defect 2 — the FBO boundary counterparty) and `UNEARNED_INTEREST` (defect 1 — a
+contract-scoped account debited `I₀` at origination and credited back to zero by each repayment's
+interest component, so `BORROWER` can carry the full `T₀` without overstating the cash that actually
+left the bank). Also reverses `DISTRIBUTION` to debit `LENDER` per Issue 15, states the
+bank-statement reconciliation invariants INV-R1–R3, and specifies the `ledger_entries.contract_id`
+nullability change needed for pre-commitment `INVESTOR_CASH` legs.
+
+**T21 — Funding-flow spec (original scope).** `docs/specs/payments/funding-flow.md`. The full leg table for `FUNDING`,
 `DISBURSEMENT`, `REPAYMENT`, `DISTRIBUTION`, `FEE` and withdrawal, under the decisions above; the
 reconciliation invariant against the bank statement; and the `INVESTOR_CASH` migration.
 **Write this before T10 implements against it.** It is the one place in this handoff where the spec
