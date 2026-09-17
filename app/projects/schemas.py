@@ -1,6 +1,5 @@
 from pydantic import BaseModel, field_validator, model_validator
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -9,7 +8,14 @@ from app.uploads.schemas import LoanApplicationDocumentOut
 
 
 class LoanApplicationCreateInline(BaseModel):
-    requested_amount: Decimal
+    # VND has no sub-unit (T1, HANDOFF-03) and `loan_applications.requested_amount`
+    # is Numeric(20,0) at the DB layer -- `int` end to end, never Decimal. A
+    # Decimal here used to round-trip through Postgres NUMERIC and come back
+    # as e.g. Decimal('8E+8') for a round amount like 800,000,000 (Postgres
+    # doesn't guarantee a non-exponential internal form, and asyncpg preserves
+    # whatever form it sends), so the API could silently serialize a clean
+    # amount as scientific notation. `int` sidesteps the whole class of bug.
+    requested_amount: int
     # Loan term in months. Optional so an existing client that predates the
     # field keeps working; validated against the engine's
     # allowed_durations_months when present. NOTE: not persisted yet —
@@ -21,7 +27,7 @@ class LoanApplicationCreateInline(BaseModel):
 
     @field_validator("requested_amount")
     @classmethod
-    def _amount_within_engine_bounds(cls, value: Decimal) -> Decimal:
+    def _amount_within_engine_bounds(cls, value: int) -> int:
         return engine_constraints.validate_loan_size(value)
 
     @field_validator("duration_months")
@@ -88,7 +94,7 @@ class ProjectOut(BaseModel):
 class ProjectLoanApplicationOut(BaseModel):
     id: UUID
     project_id: UUID
-    requested_amount: Decimal
+    requested_amount: int
     purpose: str | None
     repayment_preference: str | None
     status: str

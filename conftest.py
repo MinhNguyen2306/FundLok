@@ -50,6 +50,17 @@ os.environ.setdefault("TOTP_ENCRYPTION_KEY", "n5W7jlQOzlCKwRHfeCH4cpb6vUvai3kOX0
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "14")
+# The test client talks to the ASGI app over plain http://testserver (see the
+# `client` fixture below), never TLS. config.py defaults COOKIE_SECURE to True
+# (correct for prod), but httpx's cookie jar honours the Secure attribute for
+# real -- it stores a Secure-flagged cookie after a response but silently
+# omits it from every later request on this non-https base_url. Without this
+# override, any test that sets a cookie in one call and expects it back in a
+# later call (auth/session/remember-me flows) fails with the cookie simply
+# missing, which looks like an auth bug rather than a transport mismatch.
+# .env.example documents the same COOKIE_SECURE=False for local dev, for the
+# same underlying reason (plain-http uvicorn).
+os.environ.setdefault("COOKIE_SECURE", "False")
 # Explicitly blank (not just "unset") so a developer's local .env can't leak a
 # real Turnstile secret into the test run and make verify_turnstile_token try
 # a real network call.

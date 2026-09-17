@@ -125,7 +125,13 @@ async def test_public_listing_carries_the_loan_terms(client, make_user, db_sessi
 
     match = next(p for p in listed.json() if p["id"] == project_id)
     assert match["loan_application"] is not None
-    assert match["loan_application"]["requested_amount"] == "800000000.00"
+    # VND is integer everywhere (T1, HANDOFF-03) -- a plain JSON number, never
+    # a decimal-formatted string. This was previously asserted as
+    # "800000000.00", a stale pre-T1 assumption; it also masked a real bug,
+    # since a Decimal-typed field here could round-trip through Postgres
+    # NUMERIC and come back as e.g. Decimal('8E+8') for a round amount like
+    # this one, which `int` sidesteps entirely (see app/projects/schemas.py).
+    assert match["loan_application"]["requested_amount"] == 800000000
     assert match["loan_application"]["documents"] == []
 
 
