@@ -43,6 +43,10 @@ os.environ.setdefault(
     "postgresql+asyncpg://test_user:test_password@localhost:5432/test_db",
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
+# A real Fernet key, so the TOTP tests exercise the encrypted path rather than a
+# bypass. Deliberately NOT derived from SECRET_KEY — see app/auth/totp_crypto.py
+# for why the two secrets are separate.
+os.environ.setdefault("TOTP_ENCRYPTION_KEY", "n5W7jlQOzlCKwRHfeCH4cpb6vUvai3kOX0GnEgEh9i4=")
 os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "14")

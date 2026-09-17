@@ -14,6 +14,7 @@ from app.system.service import is_maintenance_active
 from app.system.router import router as system_router
 from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
+from app.core.config import settings
 from app.core.database import get_db
 from app.lending.router import router as lending_router
 from app.loans.router import router as loans_router
@@ -29,10 +30,20 @@ from app.verification.router import kyb_router, kyc_router
 from app.gverify.router import kyb_router as gverify_kyb_router, router as gverify_router
 from app.contact.router import router as contact_router
 
+# /docs, /redoc and /openapi.json are development tools. Served publicly they
+# hand any visitor the full route inventory and request/response schemas of the
+# admin, verification and banking APIs — a map of everything worth attacking.
+# Gated on DEBUG, which defaults to False, so production is closed unless
+# someone deliberately opens it.
+_DOCS_ENABLED = settings.DEBUG
+
 app = FastAPI(
     title="FundLok API",
     description="MVP backend for FundLok fintech platform",
     version="0.1.0",
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    redoc_url="/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
 )
 
 
@@ -68,13 +79,21 @@ async def maintenance_gate(request: Request, call_next):
 # =====================================================
 
 
+# ================= SECURITY HEADERS =================
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+# ====================================================
+
+
 # ================= CORS CONFIGURATION =================
-# Define the URLs allowed to access this API[cite: 5]
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://fundlok-front-end.vercel.app"
-]
+# URLs allowed to access this API, configurable via ALLOWED_ORIGINS in .env
+origins = settings.cors_origins
 
 app.add_middleware(
     CORSMiddleware,

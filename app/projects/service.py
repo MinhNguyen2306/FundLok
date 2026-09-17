@@ -22,8 +22,15 @@ async def create_project(
             detail="Only SMEs can create projects",
         )
     try:
+        # employee_count / company_size are validated (and company_size derived)
+        # on the way in, but `projects` has no column for either yet, so they
+        # cannot be passed to the model. Adding the columns is a shared-model
+        # change — see docs/specs/underwriting/grading-input-sources.md §3.3.
         new_project = Project(
-            **project_data.model_dump(exclude={"loan_application"}), status="DRAFT"
+            **project_data.model_dump(
+                exclude={"loan_application", "employee_count", "company_size"}
+            ),
+            status="DRAFT",
         )
         db.add(new_project)
         await db.flush()
@@ -46,7 +53,28 @@ async def create_project(
             )
             db.add(loan_app)
             await db.flush()
-            await db.refresh(loan_app)
+            # Re-read with `documents` eagerly loaded. ProjectLoanApplicationOut
+            # includes that relationship, and letting Pydantic read it unloaded
+            # fires a lazy load during model_validate -- which on an
+            # AsyncSession raises MissingGreenlet (IO outside the greenlet
+            # context), a 500 on every create-with-loan request. Same reason
+            # get_my_projects() uses selectinload. Loading it here also picks up
+            # the server-side defaults (status, created_at) in one round trip,
+            # so no separate refresh() is needed.
+            # populate_existing: the row is already in the identity map, so
+            # without it SQLAlchemy keeps the Python-side values and the create
+            # response echoes the client's precision ("800000000") while
+            # GET /projects reports what Postgres stored in Numeric(15,2)
+            # ("800000000.00"). Reloading makes both endpoints agree and makes
+            # the response describe the row as persisted.
+            loan_app = (
+                await db.execute(
+                    select(LoanApplication)
+                    .where(LoanApplication.id == loan_app.id)
+                    .options(selectinload(LoanApplication.documents))
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one()
         await db.refresh(new_project)
         return new_project, loan_app
     except IntegrityError as e:
@@ -98,5 +126,17 @@ async def display_projects(db: AsyncSession, current_user: User):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only investors can view projects",
         )
-    result = await db.execute(select(Project).where(Project.status == "ACTIVE"))
+    # The investor marketplace card shows the deal terms (asking amount), not
+    # just the company, so the application rides along. Eager-loaded for the
+    # same reason as get_my_projects: a lazy load during response serialisation
+    # raises MissingGreenlet on an AsyncSession.
+    result = await db.execute(
+        select(Project)
+        .where(Project.status == "ACTIVE")
+        .options(
+            selectinload(Project.loan_applications).selectinload(
+                LoanApplication.documents
+            )
+        )
+    )
     return result.scalars().all()

@@ -106,6 +106,14 @@ async def place_order(
     funded_amt = _dec(lst.funded_amount)
     min_ticket = _dec(lst.min_ticket) if lst.min_ticket is not None else None
 
+    # Unconditional floor, independent of min_ticket. OrderCreate already
+    # enforces gt=0 for HTTP callers, but this function is the only place that
+    # writes an Order and it is callable directly (tests, future ARQ jobs), so
+    # the invariant belongs here too: the min_ticket check below is skipped
+    # entirely when a listing has no min_ticket, and `amount > remaining`
+    # cannot catch a negative.
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
     if min_ticket is not None and amount < min_ticket:
         raise HTTPException(status_code=400, detail="Amount below min_ticket")
     remaining = target_amt - funded_amt

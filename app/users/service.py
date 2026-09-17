@@ -3,8 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.users.models import Role, User
+from datetime import datetime, timezone
+
+from app.users.models import RefreshToken, Role, User
 from app.users.schemas import (
+    ChangePasswordRequest,
     AVATAR_CONTENT_TYPE_EXTENSIONS,
     AVATAR_MAX_SIZE,
     AvatarConfirmRequest,
@@ -13,7 +16,7 @@ from app.users.schemas import (
     UserUpdateRequest,
 )
 from app.utils.email import send_password_changed_notice
-from app.utils.password import hash_password
+from app.utils.password import hash_password, verify_password
 from app.utils.r2 import delete_object, head_object, presign_get, presign_put
 
 
@@ -47,6 +50,14 @@ def user_me_payload(user: User) -> dict:
         # hash itself.
         "has_password": bool(user.password_hash),
         "created_at": user.created_at.isoformat() if user.created_at else None,
+        # Drives the first-run walkthrough. Null until the user finishes or
+        # skips it; the frontend reads this instead of browser storage so the
+        # state follows the account across devices.
+        "onboarding_tour_completed_at": (
+            user.onboarding_tour_completed_at.isoformat()
+            if user.onboarding_tour_completed_at
+            else None
+        ),
     }
 
 
@@ -174,4 +185,93 @@ async def confirm_avatar(db: AsyncSession, body: AvatarConfirmRequest, current_u
     current_user.avatar_key = body.file_key
     db.add(current_user)
     await db.flush()
+    return current_user
+
+
+async def change_password(
+    db: AsyncSession,
+    body: ChangePasswordRequest,
+    current_user: User,
+    background_tasks: BackgroundTasks,
+) -> int:
+    """Change an existing password, proving control with the current one.
+
+    Two things beyond swapping the hash, both of which are the point of the
+    feature rather than extras:
+
+      * every OTHER session is revoked. Changing a password because you think
+        someone else is in the account achieves nothing if their session keeps
+        working -- refresh tokens are independent of the password.
+      * the owner is emailed. Same reasoning as set_password: an unauthorised
+        change has to be visible to the real owner while they can still act.
+
+    Returns the number of sessions revoked so the caller can tell the user.
+    """
+    if not current_user.password_hash:
+        # No password to change; that path is set_password, which is safe
+        # precisely because there is nothing to overwrite.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account has no password yet. Set one instead.",
+        )
+
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    if verify_password(body.new_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current one",
+        )
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.add(current_user)
+
+    revoked = 0
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    now = datetime.now(timezone.utc)
+    for row in result.scalars().all():
+        row.revoked_at = now
+        db.add(row)
+        revoked += 1
+
+    await db.commit()
+
+    # Queued after the commit so the notice can never describe a change that
+    # was rolled back.
+    background_tasks.add_task(send_password_changed_notice, current_user.email)
+    return revoked
+
+
+async def update_security_preferences(
+    db: AsyncSession, current_user: User, *, signin_alerts_enabled: bool
+) -> User:
+    current_user.signin_alerts_enabled = signin_alerts_enabled
+    db.add(current_user)
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+async def complete_onboarding_tour(db: AsyncSession, current_user: User) -> User:
+    """Record that this account has seen the first-run walkthrough.
+
+    Idempotent on purpose: the frontend fires this on "skip", on "got it" and
+    on Escape, and a double-submit from a slow connection must not move the
+    timestamp. The FIRST completion is the interesting one — it says when this
+    account was onboarded — so a second call is a no-op rather than a refresh.
+    """
+    if current_user.onboarding_tour_completed_at is None:
+        current_user.onboarding_tour_completed_at = datetime.now(timezone.utc)
+        db.add(current_user)
+        await db.commit()
+        await db.refresh(current_user)
     return current_user

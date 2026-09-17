@@ -120,10 +120,11 @@ def score_all_factors(
     for factor in params.factors:
         score = score_factor(factor, inputs, derived)
         if score is not None:
-            assert 0.0 <= score <= 100.0, (
-                f"factor {factor.key!r} scored {score}, outside [0, 100] "
-                "after clamping -- this indicates a params or code bug, "
-                "see spec section 7 (Error Cases)"
-            )
+            if not (0.0 <= score <= 100.0):
+                raise ValueError(
+                    f"factor {factor.key!r} scored {score}, outside [0, 100] "
+                    "after clamping -- this indicates a params or code bug, "
+                    "see spec section 7 (Error Cases)"
+                )
         scores[factor.key] = score
     return scores

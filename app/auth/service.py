@@ -1,20 +1,24 @@
 import hashlib
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import BackgroundTasks, HTTPException, status
 
+from app.auth import totp, totp_crypto
+from app.auth.user_agent import describe_browser, describe_device
+from app.utils.email import send_new_device_signin_alert
 from app.auth.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
     ResetPasswordRequest,
     UserCreate,
 )
-from app.users.models import RefreshToken, User
+from app.lending.models import AuditLog
+from app.users.models import RefreshToken, TotpRecoveryCode, User
 from app.utils.password import hash_password, verify_password
 from app.utils.jwt import (
     create_access_token,
@@ -60,7 +64,12 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
+async def create_token_pair(db: AsyncSession, user_id: UUID | str,
+    *,
+    session_id: UUID | None = None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> dict:
     """Issue an access/refresh JWT pair and persist the refresh token (hashed)
     in `refresh_tokens` so it can be looked up, revoked, and rotated.
 
@@ -79,19 +88,32 @@ async def create_token_pair(db: AsyncSession, user_id: UUID | str) -> dict:
         data={"sub": str(uid), "typ": "refresh"},
         expires_delta=refresh_expires_delta,
     )
-    expires_at = datetime.now(timezone.utc) + refresh_expires_delta
+    now = datetime.now(timezone.utc)
+    expires_at = now + refresh_expires_delta
     db.add(
         RefreshToken(
             user_id=uid,
             token_hash=hash_refresh_token(refresh_token),
             expires_at=expires_at,
+            # A fresh sign-in starts a session; a rotation carries the existing
+            # one forward so the device does not look new after every refresh.
+            session_id=session_id or uuid4(),
+            user_agent=user_agent,
+            ip_address=ip_address,
+            last_used_at=now,
         )
     )
 
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
-async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
+async def refresh_token_pair(
+    db: AsyncSession,
+    refresh_token: str,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> dict:
     """Verify + rotate a refresh token (HANDOFF-02 Fix B: stateful, revocable).
 
     JWT signature/expiry is checked first (cheap, no DB hit for garbage
@@ -128,9 +150,19 @@ async def refresh_token_pair(db: AsyncSession, refresh_token: str) -> dict:
         raise credentials_exception
 
     stored.revoked_at = now
+    stored.last_used_at = now
     db.add(stored)
 
-    return await create_token_pair(db, user_id)
+    # Same session, new token: the device keeps its identity on the security
+    # screen, and the metadata follows the latest request rather than the
+    # original sign-in (an IP can change mid-session).
+    return await create_token_pair(
+        db,
+        user_id,
+        session_id=stored.session_id,
+        user_agent=user_agent or stored.user_agent,
+        ip_address=ip_address or stored.ip_address,
+    )
 
 
 async def logout(db: AsyncSession, refresh_token: str | None) -> dict:
@@ -157,7 +189,14 @@ def _parse_user_id(user_id: str) -> UUID:
         raise HTTPException(status_code=400, detail="Invalid token details")
 
 
-async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]:
+async def login(
+    db: AsyncSession,
+    login_data: LoginRequest,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+    background_tasks: BackgroundTasks | None = None,
+) -> tuple[User, dict]:
     verify_turnstile_token(login_data.turnstile_token)
 
     user = await authenticate_user(db, login_data.email, login_data.password)
@@ -166,9 +205,157 @@ async def login(db: AsyncSession, login_data: LoginRequest) -> tuple[User, dict]
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
-    tokens = await create_token_pair(db, user.id)
+    # Second factor, if the account has one. Nothing is issued here: no access
+    # token, no refresh token, no session row — only a short-lived challenge the
+    # caller must trade for tokens by proving possession of a code. Returning
+    # tokens now and "requiring" the code afterwards would make 2FA cosmetic,
+    # since the tokens would already work.
+    if user.totp_enabled:
+        return user, {"totp_required": True, "challenge_token": totp.create_challenge_token(user.id)}
+
+    # "Have we seen this device before?" is asked BEFORE the new session row is
+    # written, otherwise the sign-in we are about to record would itself count
+    # as prior history and no device would ever look new.
+    is_new_device = await is_unseen_device(db, user.id, user_agent)
+
+    tokens = await create_token_pair(
+        db, user.id, user_agent=user_agent, ip_address=ip_address
+    )
     await db.commit()
+
+    if is_new_device and user.signin_alerts_enabled and background_tasks is not None:
+        # After the commit: the alert describes a sign-in that actually
+        # happened. Queued rather than awaited so a slow mail server cannot
+        # make signing in feel broken.
+        background_tasks.add_task(
+            send_new_device_signin_alert,
+            user.email,
+            device=describe_device(user_agent),
+            browser=describe_browser(user_agent),
+            ip_address=ip_address,
+        )
+
     return user, tokens
+
+
+async def is_unseen_device(
+    db: AsyncSession, user_id: UUID, user_agent: str | None
+) -> bool:
+    """Whether this user agent has never signed in to this account before.
+
+    Deliberately a user-agent match, not a fingerprint: it is the only signal
+    stored, it is stable for a given browser on a given machine, and the cost of
+    a false "new device" is one extra email rather than a missed warning. An
+    absent user agent is treated as NOT new -- an unknown client would otherwise
+    alert on every single sign-in.
+    """
+    if not user_agent:
+        return False
+    result = await db.execute(
+        select(RefreshToken.id)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.user_agent == user_agent,
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is None
+
+
+async def list_sessions(
+    db: AsyncSession, user_id: UUID, *, current_token: str | None = None
+) -> list[dict]:
+    """Live sign-ins for a user, newest first.
+
+    One row per session: rotation revokes the previous row, so the unrevoked,
+    unexpired rows ARE the open sessions. The row matching the caller's own
+    refresh token is flagged so the UI can label it and refuse to revoke it.
+    """
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .order_by(RefreshToken.last_used_at.desc().nullslast())
+    )
+    rows = result.scalars().all()
+    current_hash = hash_refresh_token(current_token) if current_token else None
+
+    return [
+        {
+            "session_id": row.session_id,
+            "user_agent": row.user_agent,
+            "ip_address": row.ip_address,
+            "created_at": row.created_at,
+            "last_used_at": row.last_used_at,
+            "current": row.token_hash == current_hash,
+        }
+        for row in rows
+        # A pre-migration row has no session_id and cannot be addressed by the
+        # revoke endpoints, so listing it would offer an action that fails.
+        if row.session_id is not None
+    ]
+
+
+async def revoke_session(
+    db: AsyncSession, user_id: UUID, session_id: UUID, *, current_token: str | None
+) -> dict:
+    """Revoke every live token in one session — signing that device out.
+
+    Scoped to the caller's own user_id: a session id is a UUID, but it must
+    never be usable to sign out somebody else's device.
+    """
+    current_hash = hash_refresh_token(current_token) if current_token else None
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.session_id == session_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    rows = result.scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if current_hash is not None and any(r.token_hash == current_hash for r in rows):
+        # Signing out the device you are using is logout, not session
+        # management — different endpoint, and it also clears the cookies.
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot revoke the session you are signed in with; use logout",
+        )
+
+    now = datetime.now(timezone.utc)
+    for row in rows:
+        row.revoked_at = now
+        db.add(row)
+    return {"revoked": len(rows)}
+
+
+async def revoke_other_sessions(
+    db: AsyncSession, user_id: UUID, *, current_token: str | None
+) -> dict:
+    """Sign out everywhere except here — the "I think someone else is in my
+    account" button. The caller's own session is deliberately spared."""
+    current_hash = hash_refresh_token(current_token) if current_token else None
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    now = datetime.now(timezone.utc)
+    revoked = 0
+    for row in result.scalars().all():
+        if current_hash is not None and row.token_hash == current_hash:
+            continue
+        row.revoked_at = now
+        db.add(row)
+        revoked += 1
+    return {"revoked": revoked}
 
 
 async def register_user(
@@ -311,3 +498,238 @@ async def reset_password(
     background_tasks.add_task(send_password_changed_notice, to_email=user.email)
 
     return {"status": "success", "message": "Password reset successfully"}
+
+
+async def list_security_events(db: AsyncSession, user_id: UUID, *, limit: int = 20):
+    """Recent security-relevant audit rows for one account, newest first.
+
+    Filtered to SESSION/AUTH entity types: the audit log also carries business
+    events (score runs, contracts) which belong on an admin trail, not on a
+    user's security screen.
+    """
+    result = await db.execute(
+        select(AuditLog)
+        .where(
+            AuditLog.actor_id == user_id,
+            AuditLog.entity_type.in_(("SESSION", "AUTH")),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+
+
+# --------------------------------------------------------------------------- #
+# Two-factor authentication (TOTP)
+#
+# Enrolment is deliberately three steps rather than one:
+#
+#   setup   mint a secret, return the otpauth:// URI. Nothing is enabled yet, so
+#           an abandoned setup cannot lock anyone out.
+#   enable  prove possession with a live code. Only now does totp_enabled flip,
+#           and the recovery codes are generated and shown exactly once.
+#   disable requires the current password AND a live code (or a recovery code) —
+#           a borrowed session must not be able to strip the account's second
+#           factor, which is the whole point of having one.
+# --------------------------------------------------------------------------- #
+
+
+async def start_totp_setup(db: AsyncSession, current_user: User) -> tuple[str, str]:
+    """Mint (or re-mint) a secret and return (secret, provisioning_uri).
+
+    Re-running setup on an account that has not finished enrolling issues a
+    FRESH secret: the previous one may have been half-scanned into an app the
+    user has since deleted, and a stale entry that never produces an accepted
+    code is worse than starting over.
+
+    Refused outright once 2FA is on — rotating a live secret would silently
+    invalidate the authenticator the user is currently relying on. Disable
+    first, which requires the password.
+    """
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Two-factor authentication is already enabled",
+        )
+    # Checked before anything is generated, so a server without a key never
+    # writes a secret it cannot protect.
+    if not totp_crypto.is_configured():
+        # Delegated so there is one message and one log line, not two copies.
+        totp_crypto.require_configured()
+
+    secret = totp.generate_secret()
+    # Encrypted before it touches the row; the plaintext only ever leaves in
+    # this response, for the QR code the client is about to render.
+    current_user.totp_secret = totp_crypto.encrypt_secret(secret)
+    db.add(current_user)
+    await db.flush()
+
+    return secret, totp.provisioning_uri(secret, current_user.email)
+
+
+async def enable_totp(db: AsyncSession, current_user: User, code: str) -> list[str]:
+    """Verify a code, turn 2FA on, and return one-time recovery codes."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Two-factor authentication is already enabled",
+        )
+    secret = totp_crypto.decrypt_secret(current_user.totp_secret)
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Start two-factor setup before enabling it",
+        )
+    if not totp.verify_code(secret, code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That code is not valid. Check your authenticator app and try again.",
+        )
+
+    current_user.totp_enabled = True
+    current_user.totp_confirmed_at = datetime.now(timezone.utc)
+    db.add(current_user)
+
+    # Replace any codes from an earlier enrolment: a code printed before the
+    # secret was re-minted must not still open the account.
+    await _delete_recovery_codes(db, current_user.id)
+    plaintext = totp.generate_recovery_codes()
+    for code_value in plaintext:
+        db.add(
+            TotpRecoveryCode(
+                user_id=current_user.id, code_hash=totp.hash_recovery_code(code_value)
+            )
+        )
+    await db.flush()
+
+    return plaintext
+
+
+async def disable_totp(
+    db: AsyncSession, current_user: User, password: str, code: str
+) -> None:
+    """Turn 2FA off. Requires the password AND a second-factor code."""
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled",
+        )
+    if not current_user.password_hash or not verify_password(
+        password, current_user.password_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Password is incorrect"
+        )
+
+    # A recovery code is accepted here on purpose: someone who has lost their
+    # authenticator needs a way out that is not "contact support", and they have
+    # already proved knowledge of the password above.
+    if not await _consume_second_factor(db, current_user, code):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That code is not valid. Use a code from your app or a recovery code.",
+        )
+
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    current_user.totp_confirmed_at = None
+    db.add(current_user)
+    await _delete_recovery_codes(db, current_user.id)
+    await db.flush()
+
+
+async def complete_totp_login(
+    db: AsyncSession,
+    challenge_token: str,
+    code: str,
+    *,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+    background_tasks: BackgroundTasks | None = None,
+) -> tuple[User, dict]:
+    """Second half of a 2FA login: exchange a challenge token + code for tokens."""
+    user_id = totp.verify_challenge_token(challenge_token)
+
+    result = await db.execute(select(User).where(User.id == UUID(str(user_id))))
+    user = result.scalar_one_or_none()
+    if user is None or not user.totp_enabled:
+        # Covers a challenge token minted before 2FA was turned off, and a
+        # deleted account. Same message either way — this endpoint is reachable
+        # without a session, so it must not become an account oracle.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired two-factor challenge",
+        )
+
+    if not await _consume_second_factor(db, user, code):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="That code is not valid",
+        )
+
+    # Asked before the session row is written, same as in login() — and it has
+    # to happen here rather than in step one, or enabling 2FA would silently
+    # switch new-device alerts off for the accounts that most want them.
+    is_new_device = await is_unseen_device(db, user.id, user_agent)
+
+    tokens = await create_token_pair(
+        db, user.id, user_agent=user_agent, ip_address=ip_address
+    )
+    await db.commit()
+
+    if is_new_device and user.signin_alerts_enabled and background_tasks is not None:
+        background_tasks.add_task(
+            send_new_device_signin_alert,
+            user.email,
+            device=describe_device(user_agent),
+            browser=describe_browser(user_agent),
+            ip_address=ip_address,
+        )
+
+    return user, tokens
+
+
+async def _consume_second_factor(db: AsyncSession, user: User, code: str) -> bool:
+    """True if `code` is a valid TOTP code or an unused recovery code.
+
+    A recovery code is marked used before this returns, so it is single-use even
+    if the caller retries with the same value.
+    """
+    secret = totp_crypto.decrypt_secret(user.totp_secret)
+    if secret and totp.verify_code(secret, code):
+        return True
+
+    result = await db.execute(
+        select(TotpRecoveryCode).where(
+            TotpRecoveryCode.user_id == user.id,
+            TotpRecoveryCode.used_at.is_(None),
+        )
+    )
+    for row in result.scalars().all():
+        if totp.recovery_code_matches(code, row.code_hash):
+            row.used_at = datetime.now(timezone.utc)
+            db.add(row)
+            await db.flush()
+            return True
+
+    return False
+
+
+async def _delete_recovery_codes(db: AsyncSession, user_id: UUID) -> None:
+    result = await db.execute(
+        select(TotpRecoveryCode).where(TotpRecoveryCode.user_id == user_id)
+    )
+    for row in result.scalars().all():
+        await db.delete(row)
+
+
+async def count_unused_recovery_codes(db: AsyncSession, user_id: UUID) -> int:
+    result = await db.execute(
+        select(func.count())
+        .select_from(TotpRecoveryCode)
+        .where(
+            TotpRecoveryCode.user_id == user_id,
+            TotpRecoveryCode.used_at.is_(None),
+        )
+    )
+    return result.scalar_one() or 0

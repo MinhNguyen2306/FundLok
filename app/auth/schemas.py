@@ -1,6 +1,9 @@
 import re
 
-from pydantic import BaseModel, EmailStr, field_validator
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 
 
@@ -70,6 +73,9 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
     turnstile_token: str | None = None
+    # "Keep me signed in". Defaults to False: a client that does not send it
+    # gets session cookies, which is the safer of the two behaviours.
+    remember_me: bool = False
 
 
 class Token(BaseModel):
@@ -106,3 +112,123 @@ class ResetPasswordRequest(BaseModel):
             raise ValueError("Password too long for bcrypt")
         return v
 
+
+
+class SessionOut(BaseModel):
+    """One live sign-in, as the security screen renders it.
+
+    `device` and `browser` are parsed from the stored user agent rather than
+    stored separately: the UA string is the raw fact, the split is presentation
+    and can be improved without a migration.
+    """
+
+    session_id: UUID
+    device: str
+    browser: str
+    ip_address: str | None
+    created_at: datetime | None
+    last_used_at: datetime | None
+    current: bool
+
+
+class SecurityEventOut(BaseModel):
+    """An entry in the account's security history, from `audit_logs`."""
+
+    id: UUID
+    action: str
+    entity_type: str
+    severity: str
+    ip_address: str | None
+    created_at: datetime | None
+
+
+# --- Two-factor authentication (TOTP) --------------------------------------- #
+
+
+class TotpChallengeOut(BaseModel):
+    """Returned by POST /auth/login when the account has 2FA enabled.
+
+    Carries no session: the caller must exchange `challenge_token` plus a code
+    at POST /auth/login/2fa. `totp_required` is a Literal so this can sit in a
+    union with UserOut without either shape being ambiguous.
+    """
+
+    totp_required: Literal[True] = True
+    challenge_token: str
+
+
+class TotpLoginRequest(BaseModel):
+    challenge_token: str
+    code: str = Field(min_length=1, max_length=64)
+    # Carried over from step one: the challenge token is not the place for a UI
+    # preference, and the client already knows what the user ticked.
+    remember_me: bool = False
+
+
+class TotpSetupOut(BaseModel):
+    """The one and only time the secret leaves the server."""
+
+    secret: str
+    provisioning_uri: str
+
+
+class TotpEnableRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
+
+
+class TotpEnableOut(BaseModel):
+    """Recovery codes are returned exactly once, at enrolment.
+
+    They are stored hashed, so there is no endpoint that can show them again —
+    losing them means regenerating, which is deliberate.
+    """
+
+    enabled: bool
+    recovery_codes: list[str]
+
+
+class TotpDisableRequest(BaseModel):
+    password: str
+    # A live code or a recovery code; the service accepts either.
+    code: str = Field(min_length=1, max_length=64)
+
+
+class TotpStatusOut(BaseModel):
+    enabled: bool
+    confirmed_at: datetime | None = None
+    recovery_codes_remaining: int
+
+
+# --- Passkeys / WebAuthn ---
+
+
+class PasskeyRegisterVerifyRequest(BaseModel):
+    """The browser's PublicKeyCredential, forwarded verbatim.
+
+    Kept as a free-form dict rather than modelled field by field: the shape is
+    the WebAuthn spec's, py_webauthn parses and validates it, and restating it
+    here in Pydantic would add a second definition that can only drift.
+    """
+
+    credential: dict
+    name: str | None = Field(default=None, max_length=80)
+
+
+class PasskeyLoginVerifyRequest(BaseModel):
+    credential: dict
+    remember_me: bool = False
+
+
+class PasskeyRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class PasskeyOut(BaseModel):
+    id: UUID
+    name: str
+    device_type: str | None = None
+    backed_up: bool
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+
+    model_config = {"from_attributes": True}

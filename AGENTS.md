@@ -19,13 +19,41 @@ Because this is a **fintech** backend, correctness, security, and auditability o
 This repo vendors the agent-skills collection under `.claude/`:
 
 ```
-.claude/skills/<name>/SKILL.md   → 24 engineering skills (auto-discovered by Claude Code)
+.claude/skills/<name>/SKILL.md   → 24 engineering skills + `fundlok-domain` (auto-discovered by Claude Code)
 .claude/agents/<role>.md          → reusable subagent personas
 .claude/commands/<name>.md        → slash commands (/spec, /plan, /build, /test, /review, /code-simplify, /ship, /webperf)
 references/<topic>-checklist.md    → checklists referenced by skills
 ```
 
 Claude Code auto-discovers skills in `.claude/skills/` and subagents in `.claude/agents/`. Other agents (Cursor, Copilot, Gemini) should read the `SKILL.md` files directly and follow them.
+
+## Domain Rules (read before touching money)
+
+Before writing or changing code that touches **money, rates, grading,
+schedules, repayment, relief, extension, backstop, fees, the ledger,
+disbursement, revenue evidence, investor disclosure, eligibility or audit** —
+and before naming anything user-facing — consult the **`fundlok-domain`** skill
+(`.claude/skills/fundlok-domain/SKILL.md`). It encodes the FundLok Handbook v3
+as engineering invariants. These are not open for discussion; check there
+before inventing a behaviour.
+
+The ones that most often get violated:
+
+- **No entity in the data model may represent FundLok as a counterparty on a
+  facility.** We are not a lender and take no credit risk.
+- **The origination total is immutable** and the **outstanding balance is
+  derived**, never a mutable field. Extension fees are separate linked ledger
+  entries.
+- **True-up is relief-only:** `min(scheduled, share × verified_revenue)`. Relief
+  extends duration; it never reduces the total owed.
+- **The backstop is `1.33 × declared term`**, set at origination; no process may
+  move it.
+- **Version every rating, method, offer and disclosure** ever shown to a user;
+  the audit log is **immutable**; every override records who/why/when/approval.
+- **No code path may construct a payment instruction to a FundLok-owned
+  account.** Money leaves only to a verified SME account or back to the
+  investor.
+- **Never build a production dependency on an endpoint we do not control.**
 
 ## Core Rules
 
@@ -37,6 +65,7 @@ Claude Code auto-discovers skills in `.claude/skills/` and subagents in `.claude
 
 | When the task is… | Use skill(s) |
 | --- | --- |
+| Anything touching money, rates, grading, ledger, repayment, disclosure, audit | `fundlok-domain` (always, first) |
 | Vague idea / "what should we build" | `interview-me`, `idea-refine` |
 | New feature / significant change, no spec yet | `spec-driven-development` → `planning-and-task-breakdown` |
 | Breaking work into tasks | `planning-and-task-breakdown` |

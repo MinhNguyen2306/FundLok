@@ -89,6 +89,27 @@ class LoanApplication(Base):
     submitted_at = Column(DateTime(timezone=True))
     decided_at = Column(DateTime(timezone=True))
     decision_note = Column(Text)
+
+    # --- Lite grading: figures the applicant types instead of uploading ------
+    # The VAT and annual-report steps used to demand 48+ files to supply inputs
+    # the parser never actually read (grading-input-sources.md §3.1 still marks
+    # monthly_revenue and cogs_y1 "Unparsed"), and two engine inputs
+    # (fixed_cost_y1, variable_cost_excl_cogs_y1) appear in no statutory
+    # document at all. So the applicant states them directly.
+    #
+    # JSONB rather than one column per figure, for the same reason
+    # ScoreRun.factor_results is JSONB: the field list is still provisional
+    # pending the Lite spec (6 required + 5 optional; this implements the 5+5
+    # the engine contract implies), and Alembic history here is append-only —
+    # typed columns would mean a migration per spec revision. The contract is
+    # enforced in Pydantic at the API boundary (app/loans/schemas.py), which is
+    # where it has to hold anyway, since a JSONB column cannot validate itself.
+    #
+    # Self-reported and unverified by construction: these are checked against
+    # tax records during review, so nothing downstream may treat them as
+    # confirmed fact.
+    self_reported_figures = Column(JSONB)
+    figures_updated_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
