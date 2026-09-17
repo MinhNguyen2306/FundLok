@@ -1,9 +1,5 @@
-feat/handoff-03-mvp-backend
-
 from datetime import datetime
 from uuid import UUID
-main
-
 
 from pydantic import BaseModel, Field, model_validator
 
