@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -8,7 +7,7 @@ from pydantic import BaseModel
 class DisbursementCreate(BaseModel):
     contract_id: UUID
     bank_account: str
-    amount: Decimal
+    amount: int
 
 
 class DisbursementOut(BaseModel):
@@ -18,14 +17,14 @@ class DisbursementOut(BaseModel):
 
 class RepaymentCreate(BaseModel):
     contract_id: UUID
-    amount: Decimal
+    amount: int
     paid_at: datetime
     reference: str | None = None
 
 
 class DistributionOut(BaseModel):
     ledger_entry_id: UUID
-    amount: Decimal
+    amount: int
 
 
 class RepaymentOut(BaseModel):

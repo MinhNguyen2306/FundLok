@@ -367,7 +367,7 @@ async def test_ledger_type_check_accepts_funding(db_session, funded_contract):
             LedgerLeg(
                 debit_account_id=accts["lender"].id,
                 credit_account_id=accts["omnibus"].id,
-                amount=Decimal("1234.56"),
+                amount=Decimal("1234"),
                 type="FUNDING",
                 contract_id=accts["contract_id"],
             )

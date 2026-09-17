@@ -1,4 +1,3 @@
-from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -6,7 +5,7 @@ from pydantic import BaseModel
 
 class LoanApplicationCreate(BaseModel):
     business_id: UUID
-    requested_amount: Decimal
+    requested_amount: int
     purpose: str | None = None
     repayment_preference: str | None = None
 
@@ -14,7 +13,7 @@ class LoanApplicationCreate(BaseModel):
 class LoanApplicationOut(BaseModel):
     id: UUID
     project_id: UUID
-    requested_amount: Decimal
+    requested_amount: int
     purpose: str | None
     repayment_preference: str | None
     status: str

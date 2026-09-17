@@ -193,24 +193,48 @@ async def record_repayment(
         )
     ]
 
-    # Distribution shares are principal-weighted, rounded to 2dp per
-    # holding. Independently rounding each share can leave the sum a cent
-    # above/below `amount` (e.g. splitting 100.00 three ways by 33.33/33.33/
-    # 33.34 principal), which the ledger's pass-through balance check on
-    # OMNIBUS_CASH rejects. Fixed via largest-remainder-style absorption:
-    # every holding but the last gets its rounded proportional share, and
-    # the last (in a fixed, deterministic order) takes `amount` minus
-    # whatever was already allocated -- so the legs always sum to exactly
-    # `amount` regardless of rounding.
+    # Distribution shares are principal-weighted, over integer VND (T1 --
+    # no sub-unit currency exists to round to). Money is integer everywhere,
+    # so this is Hamilton's largest-remainder apportionment done with exact
+    # integer arithmetic (no Decimal division, no float, no quantize):
+    # each holding's exact entitlement is (principal * amount / total_principal);
+    # take the integer floor of that as its base share, then hand out the
+    # `amount - sum(floors)` leftover VND one unit at a time to the holdings
+    # with the largest fractional remainder (ties broken by holding id, for
+    # determinism). This always sums to exactly `amount`, for any amount --
+    # including amount as small as 1 VND split across many holdings, where
+    # most floors are 0. post_transaction() rejects zero-amount legs, so a
+    # holding whose final share is 0 is skipped entirely rather than posted
+    # as an empty DISTRIBUTION leg.
     if total_principal > 0 and amount > 0:
         ordered_holdings = sorted(holdings, key=lambda h: h.id)
-        allocated = Decimal("0")
-        for index, holding in enumerate(ordered_holdings):
-            if index == len(ordered_holdings) - 1:
-                share = amount - allocated
-            else:
-                share = ((holding.principal / total_principal) * amount).quantize(Decimal("0.01"))
-                allocated += share
+        total_principal_int = int(total_principal)
+        amount_int = int(amount)
+
+        shares: dict = {}
+        remainders: dict = {}
+        floor_sum = 0
+        for holding in ordered_holdings:
+            principal_int = int(holding.principal)
+            numerator = principal_int * amount_int
+            base_share, remainder = divmod(numerator, total_principal_int)
+            shares[holding.id] = base_share
+            remainders[holding.id] = remainder
+            floor_sum += base_share
+
+        leftover = amount_int - floor_sum
+        # Largest fractional remainder first; deterministic tie-break by id.
+        distribution_order = sorted(
+            ordered_holdings,
+            key=lambda h: (-remainders[h.id], str(h.id)),
+        )
+        for holding in distribution_order[:leftover]:
+            shares[holding.id] += 1
+
+        for holding in ordered_holdings:
+            share = shares[holding.id]
+            if share <= 0:
+                continue
             lender_account = await get_or_create_account(
                 db,
                 account_type="LENDER",
@@ -222,7 +246,7 @@ async def record_repayment(
                 LedgerLeg(
                     debit_account_id=omnibus_cash.id,
                     credit_account_id=lender_account.id,
-                    amount=share,
+                    amount=Decimal(share),
                     type="DISTRIBUTION",
                     contract_id=contract_id,
                     reference=f"repayment:investor:{holding.investor_id}",

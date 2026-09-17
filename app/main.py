@@ -15,6 +15,7 @@ from app.system.router import router as system_router
 from app.auth.router import router as auth_router
 from app.contracts.router import router as contracts_router
 from app.core.database import get_db
+from app.lending.router import router as lending_router
 from app.loans.router import router as loans_router
 from app.market.router import router as market_router
 from app.oauth.router import router as oauth_router
@@ -106,6 +107,7 @@ app.include_router(kyb_router)
 app.include_router(gverify_router)
 app.include_router(gverify_kyb_router)
 app.include_router(loans_router)
+app.include_router(lending_router)
 app.include_router(underwriting_router)
 app.include_router(uploads_router)
 app.include_router(contracts_router)

@@ -1,4 +1,3 @@
-from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,17 +5,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ListingCreate(BaseModel):
     contract_id: UUID
-    target_amount: Decimal
-    min_ticket: Decimal
+    target_amount: int
+    min_ticket: int
 
 
 class ListingOut(BaseModel):
     id: UUID
     contract_id: UUID
-    target_amount: Decimal
-    min_ticket: Decimal | None
+    target_amount: int
+    min_ticket: int | None
     status: str
-    funded_amount: Decimal
+    funded_amount: int
 
     model_config = {"from_attributes": True}
 
@@ -24,14 +23,14 @@ class ListingOut(BaseModel):
 class OrderCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    amount: Decimal
+    amount: int
     ack_risk_disclosure: bool = Field(default=False, alias="ackRiskDisclosure")
 
 
 class OrderOut(BaseModel):
     id: UUID
     listing_id: UUID
-    amount: Decimal
+    amount: int
     status: str
 
     model_config = {"from_attributes": True}

@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from pydantic import BaseModel
-from decimal import Decimal
 
 
 class ContractCreate(BaseModel):
@@ -15,7 +14,7 @@ class ContractOut(BaseModel):
     application_id: UUID | None
     score_run_id: UUID | None
     status: str
-    target_amount: Decimal
-    funded_amount: Decimal
+    target_amount: int
+    funded_amount: int
 
     model_config = {"from_attributes": True}
