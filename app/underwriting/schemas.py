@@ -15,41 +15,55 @@ from pydantic import BaseModel, Field
 
 
 class ScoreRunCreate(BaseModel):
-    """T3: "production callers assembling a GradingInput." This endpoint
-    is admin-gated (`require_admin`), so the caller is an ops tool or
-    internal review flow that has already collected/verified an SME's
-    financials, AI scores, CIC result and KYC/AML outcome -- there is no
-    document-ingest or AI-scoring pipeline in this handoff's scope (see
-    grading-engine's own `types.py`: "Document ingest/parsing and AI
-    grading happen upstream of this type"), so the caller supplies the
-    already-normalised `GradingInput` fields directly.
+    """The real, load-bearing request shape for `POST /underwriting/score-runs`.
 
-    `industry`, `company_size` and the six sector AI-score keys plus
-    `sector_cagr_pct` may be omitted -- `service.py` fills them in from
-    `resolve_sector_inputs()` (T3's sector reference table) when omitted,
-    per the sector-reference spec's intended usage. Pass them explicitly
-    only to override the table (R6's "upgrade path" -- a future
-    per-application LLM score for one of those six factors).
+    This is intentionally minimal -- it is NOT "production callers
+    assembling a GradingInput" (an earlier design in this handoff put ~20
+    mandatory grading-input fields directly on this request; that was
+    reverted because the shared test fixture `run_and_lock_score` in the
+    root `conftest.py`, used throughout `open_listing`, `funded_contract`,
+    `test_document_approval.py` and `test_loan_application_state.py`,
+    posts exactly `{application_id, mode}` to this endpoint, and that is
+    also the real, already-shipped API contract -- not something this
+    handoff is free to redesign).
+
+    The SME's financial data lives on `LoanApplicationFinancials`
+    (mutable, upserted separately via
+    `PUT /underwriting/applications/{application_id}/financials`) and is
+    read by `start_score_run()` at scoring time, by `application_id`. An
+    application with no financials row yet still starts a score run --
+    it resolves to `INSUFFICIENT_DATA`, per R8, rather than erroring.
     """
 
     application_id: UUID
     mode: str | None = None
 
-    company_code: str
+
+class ApplicationFinancialsCreate(BaseModel):
+    """Body for `PUT /underwriting/applications/{application_id}/financials`
+    -- upserts `LoanApplicationFinancials`. Mirrors that model's writable
+    columns exactly (see `app/lending/models.py`).
+
+    `industry`, `company_size`, `duration_months` and `operating_months`
+    are required: `grade()`'s `_validate_inputs` checks them regardless of
+    data sufficiency (allowed duration set, recognised industry), so they
+    are config/input parameters, not missing-data states. Everything else
+    is optional -- absence there is exactly what produces
+    INSUFFICIENT_DATA (R8), not a validation error.
+    """
+
     industry: str
     company_size: Literal["micro", "small", "medium"]
-    loan_size_vnd: int
     duration_months: int
     operating_months: int
 
-    # Exactly 24 values, m1..m24, in order. `None` entries are how a
-    # caller represents a missing month (R8, INSUFFICIENT_DATA) -- not an
-    # error.
-    monthly_revenue_vnd: Sequence[Optional[int]] = Field(min_length=24, max_length=24)
+    # Exactly 24 values, m1..m24, in order, when supplied. `None` entries
+    # (or omitting the field) are how a missing month is represented (R8).
+    monthly_revenue_vnd: Optional[Sequence[Optional[int]]] = Field(default=None, min_length=24, max_length=24)
 
-    cogs_y1_vnd: int
-    fixed_cost_y1_vnd: int
-    variable_cost_excl_cogs_y1_vnd: int
+    cogs_y1_vnd: Optional[int] = None
+    fixed_cost_y1_vnd: Optional[int] = None
+    variable_cost_excl_cogs_y1_vnd: Optional[int] = None
 
     conc_top1_pct: Optional[float] = None
     conc_top3_pct: Optional[float] = None
@@ -58,13 +72,57 @@ class ScoreRunCreate(BaseModel):
     tcp: Optional[float] = None
 
     # Overrides for the sector-reference-resolved values (R6). Normally omitted.
-    sector_cagr_pct: Optional[float] = None
-    ai_scores: Optional[Mapping[str, float]] = None
+    sector_cagr_pct_override: Optional[float] = None
+    ai_score_regulatory_override: Optional[float] = None
+    ai_score_input_cost_vol_override: Optional[float] = None
+    ai_score_cyclicality_override: Optional[float] = None
+    ai_score_competitor_override: Optional[float] = None
+    ai_score_macro_override: Optional[float] = None
+    ai_score_uncontrollable_override: Optional[float] = None
+    ai_score_founder_override: Optional[float] = None
 
     owner_withdrawal: Optional[float] = None
     cic_score: Optional[int] = None
     kyc_aml_passed: Optional[bool] = None
     fraud_flags: Sequence[str] = ()
+
+
+class ApplicationFinancialsOut(BaseModel):
+    id: UUID
+    application_id: UUID
+
+    industry: str
+    company_size: str
+    duration_months: int
+    operating_months: int
+
+    monthly_revenue_vnd: Optional[Sequence[Optional[int]]]
+
+    cogs_y1_vnd: Optional[int]
+    fixed_cost_y1_vnd: Optional[int]
+    variable_cost_excl_cogs_y1_vnd: Optional[int]
+
+    conc_top1_pct: Optional[float]
+    conc_top3_pct: Optional[float]
+    crr: Optional[float]
+    rri: Optional[float]
+    tcp: Optional[float]
+
+    sector_cagr_pct_override: Optional[float]
+    ai_score_regulatory_override: Optional[float]
+    ai_score_input_cost_vol_override: Optional[float]
+    ai_score_cyclicality_override: Optional[float]
+    ai_score_competitor_override: Optional[float]
+    ai_score_macro_override: Optional[float]
+    ai_score_uncontrollable_override: Optional[float]
+    ai_score_founder_override: Optional[float]
+
+    owner_withdrawal: Optional[float]
+    cic_score: Optional[int]
+    kyc_aml_passed: Optional[bool]
+    fraud_flags: Sequence[str]
+
+    model_config = {"from_attributes": True}
 
 
 class VersionsOut(BaseModel):

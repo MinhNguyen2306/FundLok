@@ -165,10 +165,20 @@ async def db_session():
         # break every subsequent resolve_custodial_account() call. Tables
         # that reference it (ledger_accounts, ledger_entries, ...) are still
         # truncated normally.
+        #
+        # `bank_rate_config` is excluded for the identical reason (T0b): the
+        # score-run-persistence migration seeds exactly one board rate
+        # (12.0%, effective 2026-09-17) as fixed reference data. Found by
+        # actually running this suite against real Postgres (T4, HANDOFF-03)
+        # -- every score-run test after the first failed with "no
+        # bank_rate_config row is in force" once the seed row was truncated
+        # away, because `bank_rate_config.created_by_actor_id` is a FK into
+        # `users`, and CASCADE follows that FK the same way it follows
+        # `custodial_accounts.contract_id` into `contracts` below.
         tables = [
             t.name
             for t in Base.metadata.sorted_tables
-            if t.name not in ("alembic_version", "custodial_accounts")
+            if t.name not in ("alembic_version", "custodial_accounts", "bank_rate_config")
         ]
         if tables:
             await session.execute(text(f'TRUNCATE TABLE {", ".join(tables)} RESTART IDENTITY CASCADE'))
@@ -186,6 +196,20 @@ async def db_session():
                     "INSERT INTO custodial_accounts (scope, status) "
                     "SELECT 'PLATFORM', 'ACTIVE' "
                     "WHERE NOT EXISTS (SELECT 1 FROM custodial_accounts WHERE scope = 'PLATFORM')"
+                )
+            )
+            # `bank_rate_config` gets the same CASCADE-from-`users` treatment
+            # as `custodial_accounts`, but unlike that idempotent
+            # insert-if-missing, this resets to exactly the migration's one
+            # baseline row every test: a test that calls set_bank_rate()
+            # (T0b's rate-history-is-append-only design means those rows
+            # would otherwise accumulate across tests and leak into
+            # `get_current_bank_rate()` in a later, unrelated test).
+            await session.execute(text("TRUNCATE TABLE bank_rate_config RESTART IDENTITY CASCADE"))
+            await session.execute(
+                text(
+                    "INSERT INTO bank_rate_config (id, rate_pct, effective_from) "
+                    "VALUES (gen_random_uuid(), 12.0, '2026-09-17')"
                 )
             )
             await session.commit()

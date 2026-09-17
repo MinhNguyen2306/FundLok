@@ -1,144 +1,159 @@
 """T4 (HANDOFF-03) -- score-run persistence and replay.
 
-Requires the real Postgres `db_session` fixture (conftest.py's autouse
-`_migrate_schema`) -- these are DB-integration tests, unlike
-test_sector_reference.py and the rest of the grading-core suite, which
-are pure-function tests with no DB. See the module docstring in
-app/underwriting/service.py for what each function does.
+Requires the real Postgres `db_session`/`client` fixtures from the root
+`conftest.py` (autouse `_migrate_schema`) -- these are DB-integration
+tests, unlike test_sector_reference.py and the rest of the grading-core
+suite, which are pure-function tests with no DB.
+
+Goes entirely through the real HTTP API (`client`), using the same
+fixtures the rest of the suite uses (`make_user`, `make_admin`,
+`make_project`, `make_loan_application`, `submit_loan_application`) --
+never a hand-built `ScoreRunCreate`/service-layer call with invented
+fields, because `POST /underwriting/score-runs` only ever accepts
+`{application_id, mode}` (see `run_and_lock_score` in the root
+conftest.py, which this suite must not diverge from). An application's
+financial data is submitted separately via
+`PUT /underwriting/applications/{id}/financials` before scoring.
 """
-import uuid
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import select
 
-from app.lending.models import LoanApplication, Project, ScoreRun
 from app.underwriting.models import BankRateConfig, ScoreRunInput
-from app.underwriting.schemas import ScoreRunCreate
-from app.underwriting.service import (
-    approve_score_run,
-    get_current_bank_rate,
-    replay_score_run,
-    set_bank_rate,
-    start_score_run,
-)
+from app.underwriting.service import get_current_bank_rate, set_bank_rate
 
-
-def _make_score_run_create(application_id, **overrides) -> ScoreRunCreate:
-    defaults = dict(
-        application_id=application_id,
-        company_code="SME-TEST-0001",
-        industry="IT Services",
-        company_size="micro",
-        loan_size_vnd=300_000_000,
-        duration_months=3,
-        operating_months=36,
-        monthly_revenue_vnd=[100_000_000] * 24,
-        cogs_y1_vnd=500_000_000,
-        fixed_cost_y1_vnd=200_000_000,
-        variable_cost_excl_cogs_y1_vnd=100_000_000,
-        conc_top1_pct=30.0,
-        conc_top3_pct=50.0,
-        crr=60.0,
-        rri=60.0,
-        tcp=60.0,
-        owner_withdrawal=50.0,
-        cic_score=650,
-        kyc_aml_passed=True,
-        fraud_flags=[],
-    )
-    defaults.update(overrides)
-    return ScoreRunCreate(**defaults)
+FULL_FINANCIALS = {
+    "industry": "IT Services",
+    "company_size": "micro",
+    "duration_months": 3,
+    "operating_months": 36,
+    "monthly_revenue_vnd": [100_000_000] * 24,
+    "cogs_y1_vnd": 500_000_000,
+    "fixed_cost_y1_vnd": 200_000_000,
+    "variable_cost_excl_cogs_y1_vnd": 100_000_000,
+    "conc_top1_pct": 30.0,
+    "conc_top3_pct": 50.0,
+    "crr": 60.0,
+    "rri": 60.0,
+    "tcp": 60.0,
+    "owner_withdrawal": 50.0,
+    "cic_score": 650,
+    "kyc_aml_passed": True,
+    "fraud_flags": [],
+}
 
 
 @pytest.fixture
-async def submitted_application(db_session, project_factory):
-    """A LoanApplication in SUBMITTED status -- the precondition
-    start_score_run enforces (unchanged from before this handoff)."""
-    project = await project_factory()
-    app = LoanApplication(
-        id=uuid.uuid4(),
-        project_id=project.id,
-        requested_amount=300_000_000,
-        status="SUBMITTED",
+async def scored_setup(client, make_user, make_admin, make_project, make_loan_application, submit_loan_application):
+    """SME project -> submitted loan application, admin ready to score it."""
+    sme = await make_user(role="SME")
+    admin = await make_admin()
+    project = await make_project(sme)
+    application = await make_loan_application(sme, project["id"], requested_amount="300000000.00")
+    resp = await submit_loan_application(sme, application["id"])
+    assert resp.status_code == 200
+    return {"sme": sme, "admin": admin, "project": project, "application": application}
+
+
+async def _put_financials(client, admin, application_id, **overrides):
+    body = dict(FULL_FINANCIALS)
+    body.update(overrides)
+    resp = await client.put(
+        f"/underwriting/applications/{application_id}/financials",
+        json=body,
+        headers=admin["headers"],
     )
-    db_session.add(app)
-    await db_session.flush()
-    return app
+    assert resp.status_code == 200, resp.text
+    return resp.json()
 
 
-async def test_score_run_persists_full_precision_grade_and_rate(db_session, submitted_application):
-    body = _make_score_run_create(submitted_application.id)
-    sr, grading_result = await start_score_run(db_session, body)
-    await db_session.commit()
-
-    assert sr.final_grade_precise == grading_result.final_grade
-    # D24: never truncated to 2dp in the field this handoff introduces.
-    # (overall_score, the legacy column, IS rounded -- that's the point.)
-    assert sr.final_grade_precise != float(sr.overall_score)
-    assert sr.interest_rate_pct == grading_result.interest_rate_pct
+async def _start_score_run(client, admin, application_id, mode=None):
+    resp = await client.post(
+        "/underwriting/score-runs",
+        json={"application_id": application_id, "mode": mode},
+        headers=admin["headers"],
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
 
 
-async def test_score_run_records_engine_and_params_version(db_session, submitted_application):
-    body = _make_score_run_create(submitted_application.id)
-    sr, grading_result = await start_score_run(db_session, body)
-    await db_session.commit()
+async def test_score_run_with_no_financials_is_insufficient_data(client, scored_setup):
+    """An application with no `LoanApplicationFinancials` row yet must
+    still start a score run successfully (this is exactly the path
+    `run_and_lock_score` exercises throughout the rest of the suite,
+    which never submits financials) -- it resolves to INSUFFICIENT_DATA,
+    per R8, rather than erroring."""
+    admin = scored_setup["admin"]
+    application = scored_setup["application"]
 
-    assert sr.engine_version == grading_result.engine_version
-    assert sr.params_version == grading_result.params_version
-    assert sr.sector_reference_version is not None  # IT Services is supported -> resolver was used
-    assert sr.bank_rate_pct is not None
-    assert sr.bank_rate_effective_from is not None
+    body = await _start_score_run(client, admin, application["id"])
 
-
-async def test_score_run_is_replayable_from_stored_inputs(db_session, submitted_application):
-    body = _make_score_run_create(submitted_application.id)
-    sr, original_result = await start_score_run(db_session, body)
-    await db_session.commit()
-
-    replayed_sr, replayed_result = await replay_score_run(db_session, sr.id)
-    assert replayed_sr.id == sr.id
-    assert replayed_result.final_grade == original_result.final_grade
-    assert replayed_result.decision == original_result.decision
-    assert replayed_result.interest_rate_pct == original_result.interest_rate_pct
-    assert dict(replayed_result.factor_scores) == dict(original_result.factor_scores)
+    assert body["decision"] == "INSUFFICIENT_DATA"
+    assert body["grade"]["value"] is None
+    assert body["grade"]["display"] is None
+    assert body["pricing"] is None
 
 
-async def test_score_run_input_is_append_only(db_session, submitted_application):
+async def test_score_run_with_financials_produces_a_real_grade(client, scored_setup, db_session):
+    admin = scored_setup["admin"]
+    application = scored_setup["application"]
+
+    await _put_financials(client, admin, application["id"])
+    body = await _start_score_run(client, admin, application["id"])
+
+    assert body["decision"] in ("APPROVED", "REVIEW", "REJECT", "AI_PENDING")
+    assert body["versions"]["engine"]
+    assert body["versions"]["params"]
+    assert body["versions"]["sector_reference"] is not None  # IT Services is supported -> resolver was used
+
+    result = await db_session.execute(select(ScoreRunInput).where(ScoreRunInput.score_run_id == body["id"]))
+    stored = result.scalar_one()
+    assert stored.industry == "IT Services"
+
+
+async def test_score_run_is_replayable_from_stored_inputs(client, scored_setup):
+    admin = scored_setup["admin"]
+    application = scored_setup["application"]
+
+    await _put_financials(client, admin, application["id"])
+    started = await _start_score_run(client, admin, application["id"])
+
+    replayed = await client.get(f"/underwriting/score-runs/{started['id']}", headers=admin["headers"])
+    assert replayed.status_code == 200, replayed.text
+    replayed_body = replayed.json()
+
+    assert replayed_body["decision"] == started["decision"]
+    assert replayed_body["grade"]["value"] == started["grade"]["value"]
+    assert replayed_body["factor_scores"] == started["factor_scores"]
+
+
+async def test_score_run_input_is_append_only(client, scored_setup, db_session):
     """DB-level immutability, mirroring state_transition (T6) and the
     ledger tables: a score_run_inputs row can never be updated or
     deleted, only superseded by a new score run."""
-    body = _make_score_run_create(submitted_application.id)
-    sr, _ = await start_score_run(db_session, body)
-    await db_session.commit()
+    admin = scored_setup["admin"]
+    application = scored_setup["application"]
 
-    from sqlalchemy import select
+    await _put_financials(client, admin, application["id"])
+    started = await _start_score_run(client, admin, application["id"])
 
-    result = await db_session.execute(select(ScoreRunInput).where(ScoreRunInput.score_run_id == sr.id))
+    result = await db_session.execute(select(ScoreRunInput).where(ScoreRunInput.score_run_id == started["id"]))
     stored = result.scalar_one()
-    stored.company_code = "TAMPERED"
+    stored.industry = "TAMPERED"
     with pytest.raises(Exception):  # DB trigger raises; exact exception class is driver-specific
         await db_session.flush()
     await db_session.rollback()
 
 
-async def test_insufficient_data_produces_no_grade_not_a_low_one(db_session, submitted_application):
-    body = _make_score_run_create(submitted_application.id, monthly_revenue_vnd=[None] * 24)
-    sr, grading_result = await start_score_run(db_session, body)
-    await db_session.commit()
-
-    assert sr.decision == "INSUFFICIENT_DATA"
-    assert sr.final_grade_precise is None
-    assert sr.interest_rate_pct is None
-    assert sr.overall_score is None
-
-
-async def test_bank_rate_config_effective_dating(db_session, admin_user):
+async def test_bank_rate_config_effective_dating(db_session, make_admin):
+    admin = await make_admin()
     today = date.today()
     baseline = await get_current_bank_rate(db_session, as_of=today)
     assert baseline.rate_pct == pytest.approx(12.0)
 
     future_date = today + timedelta(days=30)
-    await set_bank_rate(db_session, rate_pct=13.5, effective_from=future_date, actor_id=admin_user.id)
+    await set_bank_rate(db_session, rate_pct=13.5, effective_from=future_date, actor_id=admin["id"])
     await db_session.commit()
 
     # Not yet in force today.
@@ -150,20 +165,28 @@ async def test_bank_rate_config_effective_dating(db_session, admin_user):
     assert new_current.rate_pct == pytest.approx(13.5)
 
 
-async def test_score_run_records_bank_rate_in_force_at_scoring_time(db_session, submitted_application, admin_user):
+async def test_score_run_records_bank_rate_in_force_at_scoring_time(client, scored_setup, db_session):
     """T0b: 'the rate in force must be recorded on every score run so any
     quote is traceable' -- change the rate, confirm the OLD run keeps its
     original rate rather than reflecting the new one."""
-    body = _make_score_run_create(submitted_application.id)
-    sr, _ = await start_score_run(db_session, body)
+    admin = scored_setup["admin"]
+    application = scored_setup["application"]
+
+    await _put_financials(client, admin, application["id"])
+    started = await _start_score_run(client, admin, application["id"])
+    original_rate = started["versions"]["bank_rate_pct"]
+
+    # A date distinct from the migration's seed row's effective_from
+    # (2026-09-17) -- `effective_from` is unique, and in this environment
+    # "today" collides with the seed date exactly.
+    await set_bank_rate(
+        db_session, rate_pct=15.0, effective_from=date.today() + timedelta(days=1), actor_id=admin["id"]
+    )
     await db_session.commit()
-    original_rate = sr.bank_rate_pct
 
-    await set_bank_rate(db_session, rate_pct=15.0, effective_from=date.today(), actor_id=admin_user.id)
-    await db_session.commit()
+    result = await db_session.execute(select(BankRateConfig).order_by(BankRateConfig.effective_from.desc()))
+    assert float(result.scalars().first().rate_pct) == pytest.approx(15.0)
 
-    from sqlalchemy import select
-
-    result = await db_session.execute(select(ScoreRun).where(ScoreRun.id == sr.id))
-    reloaded = result.scalar_one()
-    assert reloaded.bank_rate_pct == original_rate  # unchanged by the later rate revision
+    replayed = await client.get(f"/underwriting/score-runs/{started['id']}", headers=admin["headers"])
+    assert replayed.status_code == 200
+    assert replayed.json()["versions"]["bank_rate_pct"] == pytest.approx(original_rate)

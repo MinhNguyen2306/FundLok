@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.underwriting.mapping import to_score_run_out
 from app.underwriting.schemas import (
+    ApplicationFinancialsCreate,
+    ApplicationFinancialsOut,
     BankRateConfigCreate,
     BankRateConfigOut,
     ScoreRunApproveOut,
@@ -20,6 +22,7 @@ from app.underwriting.service import (
     replay_score_run,
     set_bank_rate,
     start_score_run,
+    upsert_application_financials,
 )
 from app.users.models import Role, User
 from app.utils.audit import append_audit
@@ -44,7 +47,7 @@ async def post_score_run(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    sr, grading_result = await start_score_run(db, body)
+    sr, grading_result = await start_score_run(db, body.application_id, body.mode)
     append_audit(
         db,
         entity_type="SCORE_RUN",
@@ -92,6 +95,21 @@ async def post_score_run_approve(
         locked_at=sr.locked_at.isoformat() if sr.locked_at else None,
         status=sr.status,
     )
+
+
+@router.put("/applications/{application_id}/financials", response_model=ApplicationFinancialsOut)
+async def put_application_financials(
+    application_id: UUID,
+    body: ApplicationFinancialsCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Admin-gated upsert of the raw material `start_score_run()` grades
+    from. No self-service SME intake flow exists here by design -- see
+    `LoanApplicationFinancials`'s docstring."""
+    row = await upsert_application_financials(db, application_id, body)
+    await db.commit()
+    return row
 
 
 @router.post("/bank-rate", response_model=BankRateConfigOut, status_code=201)
