@@ -1,0 +1,84 @@
+# Vietnamese public holiday calendar (T8, HANDOFF-03 Issue 9 / OP-05).
+#
+# One entry per statutory NON-WORKING WEEKDAY (a holiday that falls on a
+# weekend is not listed here -- it is already excluded by the ordinary
+# Mon-Fri business-day rule, and listing it would be a harmless no-op at
+# best and a source of drift at worst). Where the government moves a
+# holiday to a different weekday because the traditional date falls on a
+# weekend (e.g. Hùng Kings' Commemoration Day 2026, whose calendar date is
+# a Sunday), the OBSERVED weekday is listed, not the traditional date.
+#
+# Repayment spec EC-01 forbids deriving this from weekday rules alone --
+# Tết alone removes 1-2 weeks and cannot be inferred, it has to be looked
+# up. "backed by a maintained annual Vietnamese holiday table" (T8) means
+# this file: a human (Ops, per HANDOFF-03 T0d) updates it once a year when
+# the government confirms the next year's schedule, and the calendar
+# service treats a year with no entries at all as a loud error, never a
+# silent all-business-days assumption -- see calendar.py's
+# `MissingHolidayCalendarYearError`.
+#
+# 2026: confirmed against the Ministry of Home Affairs' official 2026
+# holiday-schedule announcement (see docs/specs/repayment_schedule/
+# business-day-calendar.md for sources). status: confirmed.
+#
+# 2027: the government has not yet published a final decision as of this
+# handoff (2026-09-17) -- the dates below are the best publicly available
+# estimates (lunar-calendar-derived Tết dates plus the government's usual
+# weekend-bridging pattern) and MUST be reconfirmed once the official
+# schedule is announced (typically Q4 of the preceding year, i.e. Q4 2026).
+# status: provisional.
+
+years:
+  2026:
+    status: confirmed
+    holidays:
+      - date: 2026-01-01
+        name: "New Year's Day"
+      - date: 2026-01-02
+        name: "New Year's Day (bridge day)"
+      - date: 2026-02-16
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2026-02-17
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2026-02-18
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2026-02-19
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2026-02-20
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2026-04-27
+        name: "Hùng Kings' Commemoration Day (observed -- traditional date Apr 26 falls on a Sunday)"
+      - date: 2026-04-30
+        name: "Reunification Day"
+      - date: 2026-05-01
+        name: "International Labor Day"
+      - date: 2026-09-01
+        name: "National Day"
+      - date: 2026-09-02
+        name: "National Day"
+      - date: 2026-11-24
+        name: "Vietnam Culture Day (newly designated for 2026)"
+
+  2027:
+    status: provisional
+    holidays:
+      - date: 2027-01-01
+        name: "New Year's Day"
+      - date: 2027-02-05
+        name: "Tết Nguyên Đán (Lunar New Year, pre-holiday)"
+      - date: 2027-02-08
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2027-02-09
+        name: "Tết Nguyên Đán (Lunar New Year)"
+      - date: 2027-04-15
+        name: "Hùng Kings' Commemoration Day"
+      - date: 2027-04-30
+        name: "Reunification Day"
+      - date: 2027-05-03
+        name: "International Labor Day (observed -- traditional date May 1 falls on a Saturday)"
+      - date: 2027-09-02
+        name: "National Day"
+      - date: 2027-09-03
+        name: "National Day"
+      - date: 2027-11-24
+        name: "Vietnam Culture Day"

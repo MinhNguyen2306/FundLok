@@ -28,5 +28,11 @@ def test_params_version_pinned(params):
     # Guards silent YAML drift -- if this ever changes, every test that
     # reconciles against the golden set needs to be re-verified against a
     # freshly-extracted fixture before the version bump is trusted.
-    assert params.params_version == "wb-v0-20260728"
+    #
+    # wb-v0-20260728 -> wb-v1-20260917 (T3, HANDOFF-03): gate 3 enabled at
+    # threshold 13, working_days_per_month 21 -> 22. The golden set (10,000
+    # rows / 270,000 assertions, test_golden_set.py) was re-verified against
+    # this version and passes at 0 failures -- this pin was left stale by
+    # that change and is corrected here, not re-litigated.
+    assert params.params_version == "wb-v1-20260917"
     assert params.engine_version == "1.0.0"

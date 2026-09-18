@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # certificate's legal representatives (spec Rule 7, default off pending review).
     GVERIFY_KYB_REQUIRE_REP_MATCH: bool = False
 
+    # ARQ worker (T2 -- HANDOFF-03). The daily repayment batch and ML scoring
+    # run through ARQ, never BackgroundTasks (CLAUDE.md). Points at the
+    # docker-compose `redis` service locally; a managed Redis URL in prod.
+    REDIS_URL: str = "redis://localhost:6379/0"
     @property
     def webauthn_rp_id(self) -> str:
         """Registrable domain for passkeys, derived from FRONTEND_URL if unset."""

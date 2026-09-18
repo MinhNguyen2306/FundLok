@@ -18,7 +18,6 @@ on every create request and the params file only changes on deploy.
 """
 from __future__ import annotations
 
-from decimal import Decimal
 from functools import lru_cache
 from typing import Optional
 
@@ -64,10 +63,13 @@ def validate_industry(value: Optional[str]) -> Optional[str]:
     return industry
 
 
-def validate_loan_size(value: Decimal) -> Decimal:
+def validate_loan_size(value: int) -> int:
     constraints = params().loan_constraints
-    minimum = Decimal(str(constraints["min_vnd"]))
-    maximum = Decimal(str(constraints["max_vnd"]))
+    # VND is integer everywhere (T1, HANDOFF-03); the bounds come from YAML as
+    # plain numbers, so int() is exact here -- no Decimal round-trip needed to
+    # compare or to render the error message.
+    minimum = int(constraints["min_vnd"])
+    maximum = int(constraints["max_vnd"])
     if not (minimum <= value <= maximum):
         raise ValueError(
             f"requested_amount must be between {minimum:,.0f} and "

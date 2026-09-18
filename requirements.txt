@@ -57,6 +57,13 @@ google-cloud-storage==3.13.1
 boto3==1.43.67           # Cloudflare R2 (S3-compatible) presigned uploads
 PyYAML==6.0.3          # grading engine params loader (app/underwriting/grading/params.py)
 
+# ── Background jobs (ARQ worker, T2) ─────────────────────────────────────────
+# Scheduled/async jobs -- the daily repayment batch (reminders, cutoff, arrears,
+# backstop, T11) and ML scoring run through this, never BackgroundTasks, per
+# CLAUDE.md ("Background jobs go through ARQ -- never BackgroundTasks for
+# financial operations"). Needs a Redis instance (docker-compose `redis` service).
+arq==0.28.0
+
 # ── Test tooling ─────────────────────────────────────────────────────────────
 httpx==0.28.1
 pytest==9.1.1
@@ -97,6 +104,7 @@ jmespath==1.1.0
 Mako==1.4.1
 MarkupSafe==3.0.3
 packaging==26.3
+PyJWT==2.14.0
 pluggy==1.6.0
 proto-plus==1.28.3
 protobuf==7.35.1
@@ -106,6 +114,7 @@ pycparser==3.0
 pydantic_core==2.46.4
 Pygments==2.20.0
 python-dateutil==2.9.0.post0
+redis==5.3.1
 regex==2026.7.19
 requests==2.34.2
 rsa==4.9.1

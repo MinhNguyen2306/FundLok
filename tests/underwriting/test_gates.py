@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from app.underwriting.grading import grade, load_params
 
-from .conftest import GRADING_PARAMS_PATH, make_valid_input
+from .conftest import GRADING_PARAMS_PATH, iter_golden_set_full, make_valid_input, row_to_grading_input
 
 
 def test_hard_gate_produces_reject():
@@ -49,14 +49,38 @@ def test_hard_gate_beats_soft_gate():
     assert result.decision == "REJECT"  # hard wins
 
 
-def test_gate_3_disabled_by_default_and_config_switchable(params, tmp_path):
+def test_gate_3_enabled_at_threshold_13_per_t0a(params):
+    """T0a (Loc, 17 Sep 2026): gate 3 is now enabled at threshold: 13 --
+    was disabled pending a business decision on where to set it (98.4%/
+    95.2% fire rates at the previously-considered >=3/>=4 thresholds were
+    unusable). This is config, not code: the gate's own rule
+    (`count(factor_scores < 50) >= threshold`) and `evaluate_gates`'s
+    `if not gate.enabled: continue` check are both unchanged."""
     gate3 = next(g for g in params.gates if g.key == "low_factor_count")
-    assert gate3.enabled is False
+    assert gate3.enabled is True
+    assert gate3.threshold == 13
 
+    # And it now actually fires when a real application crosses the
+    # threshold -- no code change beyond the params file.
+    inputs = make_valid_input()
+    result = grade(inputs, params)
+    below_50 = sum(1 for s in result.factor_scores.values() if s is not None and s < 50)
+    fired_keys = {g.key for g in result.fired_gates}
+    if below_50 >= 13:
+        assert "low_factor_count" in fired_keys
+    else:
+        assert "low_factor_count" not in fired_keys
+
+
+def test_gate_3_still_switchable_by_config_alone(params, tmp_path):
+    """The switchability property T0a's predecessor test guarded --
+    `evaluate_gates` reads `gate.enabled`/`gate.threshold` off the params
+    file, never a hardcoded skip list -- still holds now that the gate
+    ships enabled by default. Flip it back off here with no code change."""
     original_text = GRADING_PARAMS_PATH.read_text()
     switched_text = original_text.replace(
+        "enabled: true, threshold: 13}",
         "enabled: false, threshold: null}",
-        "enabled: true, threshold: 3}",
     )
     assert switched_text != original_text  # the replace actually matched
 
@@ -65,18 +89,26 @@ def test_gate_3_disabled_by_default_and_config_switchable(params, tmp_path):
 
     switched_params = load_params(path=switched_yaml)
     switched_gate3 = next(g for g in switched_params.gates if g.key == "low_factor_count")
-    assert switched_gate3.enabled is True
-    assert switched_gate3.threshold == 3
+    assert switched_gate3.enabled is False
 
-    # And it now actually fires -- no code change, only the params file.
-    inputs = make_valid_input()
-    result = grade(inputs, switched_params)
-    below_50 = sum(1 for s in result.factor_scores.values() if s is not None and s < 50)
-    fired_keys = {g.key for g in result.fired_gates}
-    if below_50 >= 3:
-        assert "low_factor_count" in fired_keys
-    else:
-        assert "low_factor_count" not in fired_keys
+
+def test_gate3_fire_rate_is_instrumented(params):
+    """T3 acceptance criterion: gate 3 fires on 3.7-3.8% of the golden set
+    at threshold 13. Runs over the full 10,000-row fixture, not the
+    500-row sample -- the sample is not proportionally representative for
+    this particular check (it fires at 9.6% on the sample vs 3.75% on the
+    full set), so asserting this range against the sample would be
+    asserting the wrong number."""
+    fired = 0
+    total = 0
+    for row in iter_golden_set_full():
+        total += 1
+        inputs = row_to_grading_input(row)
+        result = grade(inputs, params)
+        if any(g.key == "low_factor_count" for g in result.fired_gates):
+            fired += 1
+    rate = fired / total
+    assert 0.037 <= rate <= 0.038, f"gate 3 fire rate {rate:.4f} outside [0.037, 0.038] on the full golden set"
 
 
 def test_gate_7_disabled_by_default_and_config_switchable(params, tmp_path):

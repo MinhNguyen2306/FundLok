@@ -16,6 +16,7 @@ see R1 in the spec for why every function here is a plain `def`, never
 """
 from .engine import grade
 from .params import FactorParam, GateParam, ParamSet, load_params
+from .sector_reference import SectorReference, load_sector_reference, resolve_sector_inputs
 from .types import GateResult, GradingInput, GradingResult
 
 __all__ = [
@@ -27,4 +28,7 @@ __all__ = [
     "GradingInput",
     "GradingResult",
     "GateResult",
+    "SectorReference",
+    "load_sector_reference",
+    "resolve_sector_inputs",
 ]

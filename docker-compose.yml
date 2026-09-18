@@ -25,6 +25,16 @@ services:
     environment:
       MP_MAX_MESSAGES: 5000
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -51,12 +61,32 @@ services:
     environment:
       # Override .env values that point at host "localhost" so they resolve on
       # the compose network instead.
-      DATABASE_URL: postgresql+psycopg2://fundlok:fundlok@postgres:5432/fundlok_dev
+      DATABASE_URL: postgresql+asyncpg://fundlok:fundlok@postgres:5432/fundlok_dev
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       PORT: "8080"
     depends_on:
       postgres:
+        condition: service_healthy
+
+  # ARQ worker (T2, HANDOFF-03 Issue 8) -- runs the daily repayment batch
+  # and ML scoring jobs registered on app.scheduler.worker.WorkerSettings.
+  # Separate process from `api`; both share the same image and .env.
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["arq", "app.scheduler.worker.WorkerSettings"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fundlok:fundlok@postgres:5432/fundlok_dev
+      REDIS_URL: redis://redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:

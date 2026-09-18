@@ -25,7 +25,7 @@
 # (curve-fit artifacts); the clamp neutralises them. Do not change them to 100.
 
 engine_version: "1.0.0"
-params_version: "wb-v0-20260728"
+params_version: "wb-v1-20260917"  # T0a/T0b/T3/T5: gate 3 enabled, working_days_per_month 21->22, bank_rate now sourced from config
 source_workbook: "FundLok formula factors v0.xlsx"
 source_tab: "Scoring From Raw"
 factor_count: 22
@@ -342,13 +342,27 @@ final_grade:
 # ---------------------------------------------------------------------------
 pricing:
   # bank_rate_pct is per-application config, NOT a constant. The workbook's Raw
-  # tab varies it 8.1-13.6 across rows. Default 12.0 per requirements §2.4.
+  # tab varies it 8.1-13.6 across rows. T0b (Loc, 17 Sep 2026): the rate in
+  # force is a BOARD-SET CONSTANT with an effective date, tracked in the new
+  # `bank_rate_config` table (app/underwriting/models.py), not a YAML literal
+  # or a GradingInput dataclass default -- the rate in force must be
+  # recorded on every score run so any quote is traceable. This YAML value
+  # is only the seed/fallback baseline (12.0, matching the board's baseline)
+  # for environments where the table has no row yet; production callers
+  # read the current rate from the table, not from here.
   bank_rate_default_pct: 12.0
   rate_cap_pct: 20.0
   formula: "min(rate_cap_pct, bank_rate_pct + (rate_cap_pct - bank_rate_pct) * (100 - final_grade) / 100)"
 
 repayment:
-  working_days_per_month: 21
+  # T5 (HANDOFF-03): aligned to 22 to match the repayment mechanism's actual
+  # business-day calendar (D14 default, app/repayment_schedule/calendar.py's
+  # DEFAULT_WORKING_DAYS_PER_MONTH) -- was 21, an unrelated guess that
+  # predates the repayment spec. working_days_per_year is intentionally left
+  # at 252 (a distinct "trading days per year" revenue-annualization
+  # convention for avg_daily_revenue, not a schedule count) and is NOT
+  # 12*working_days_per_month -- see grading-engine-deviations.md.
+  working_days_per_month: 22
   working_days_per_year: 252
   target_payment: "loan_size * (1 + rate_pct/100 * duration_months/12)"
   target_daily_repayment: "target_payment / (duration_months * working_days_per_month)"
@@ -361,11 +375,13 @@ repayment:
 gates:
   - {id: 1, key: operating_history,     severity: soft, rule: "operating_months < 24"}
   - {id: 2, key: history_vs_term,       severity: soft, rule: "duration_months > 0.25 * operating_months"}
-  # GATE 3 IS DISABLED. At the specified thresholds it fires on 98.4% (>=3) or
-  # 95.2% (>=4) of the golden set. Median SME has 8 of 22 factors below 50.
-  # Requires a business decision before enabling. See HANDOFF-G1 §7.
+  # GATE 3 ENABLED (T0a, Loc, 17 Sep 2026): threshold: 13 flags 3.75% of the
+  # golden set (median SME has 8 of 22 factors below 50; 13 is well above
+  # that median so it only catches the genuine long tail). Was disabled --
+  # at the previously-considered thresholds (>=3 or >=4) it fired on 98.4%
+  # / 95.2% of the golden set. See HANDOFF-G1 §7.
   - {id: 3, key: low_factor_count,      severity: soft, rule: "count(factor_scores < 50) >= threshold",
-     enabled: false, threshold: null}
+     enabled: true, threshold: 13}
   # Gate 4 is enforced in the application UI, not the engine (requirements §3.5).
   - {id: 4, key: first_loan_tenor,      severity: none, rule: "enforced_in_ui"}
   - {id: 5, key: excluded_industry,     severity: hard, rule: "industry in excluded_industries"}

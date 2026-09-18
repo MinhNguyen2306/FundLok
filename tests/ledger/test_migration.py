@@ -9,9 +9,40 @@ import os
 
 import psycopg2
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy.engine import make_url
 
 from conftest import ALEMBIC_COMMAND, ALEMBIC_DATABASE_URL, ROOT
+
+
+def _one_step_back_from_head() -> str:
+    """The explicit downgrade target equivalent to "-1" from whatever the
+    current head happens to be.
+
+    Plain `alembic downgrade -1` only works when the head has a single
+    parent. The moment the head is a *merge* revision (down_revision is a
+    tuple of two-or-more parents -- e.g. after reconciling two branches that
+    each added migrations, as HANDOFF-03's ledger/scoring chain and main's
+    auth/lite-grading chain did), "one step back" is structurally ambiguous
+    -- which parent's branch would it even mean? -- and alembic refuses with
+    "Ambiguous walk" rather than guess. This resolves the real target
+    directly from the script graph instead of hardcoding today's specific
+    revision id, so the test keeps working the same way after the next
+    ordinary (non-merge) migration lands, and after any future merge too.
+    """
+    config = Config(str(ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "alembic"))
+    script = ScriptDirectory.from_config(config)
+    (head,) = script.get_heads()
+    down_revision = script.get_revision(head).down_revision
+    if isinstance(down_revision, tuple):
+        # A merge revision: land on one parent specifically, not "both at
+        # once" (alembic_version holding two rows) -- the point of this test
+        # is a clean, ordinary upgrade/downgrade/upgrade cycle, not exercising
+        # the separate multi-head-tracking machinery.
+        return down_revision[0]
+    return down_revision
 
 MIGRATION_CHECK_DB = "test_db_migration_check"
 
@@ -62,8 +93,8 @@ def test_migration_upgrade_and_downgrade_clean():
 
         run("upgrade", "head")
         run("check")
-        # Downgrade *this* migration (-1), not all the way to `base`: an
-        # unrelated, already-merged, frozen migration
+        # Downgrade *this* migration (one step back from head), not all the
+        # way to `base`: an unrelated, already-merged, frozen migration
         # (5ed837b145f0_add_full_name_to_users.py) has a pre-existing
         # `op.drop_constraint(None, "refresh_tokens", type_="unique")` in
         # its downgrade() -- an unnamed constraint alembic can't compile a
@@ -73,7 +104,12 @@ def test_migration_upgrade_and_downgrade_clean():
         # flagged in the PR description for separate triage. "downgrade"
         # in the spec/task means this migration's own revert, which is
         # what's exercised here.
-        run("downgrade", "-1")
+        #
+        # Plain relative "-1" only works when head has a single parent; see
+        # _one_step_back_from_head's docstring for why an explicit target is
+        # required once head is a merge revision (as it is right now, after
+        # reconciling two independently-extended migration chains).
+        run("downgrade", _one_step_back_from_head())
         run("upgrade", "head")
         run("check")
     finally:
