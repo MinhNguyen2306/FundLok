@@ -36,7 +36,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: minio
     ports:
       - "9000:9000"   # S3 API port
