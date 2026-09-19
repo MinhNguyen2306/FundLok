@@ -15,6 +15,7 @@ DB_NAME="fundlok_dev"
 DB_USER="fundlok"
 ALEMBIC="alembic"
 [ -x ./venv/bin/alembic ] && ALEMBIC="./venv/bin/alembic"
+[ -x ./.venv/bin/alembic ] && ALEMBIC="./.venv/bin/alembic"
 
 echo "[reset_db] Ensuring Postgres is up…"
 docker compose up -d postgres >/dev/null
